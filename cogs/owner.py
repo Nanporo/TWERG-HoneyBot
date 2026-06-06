@@ -3,14 +3,26 @@ from discord.ext import commands
 from discord import app_commands
 import sys
 import os
+import json
 
 class Owner(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # 自訂權限檢查：確認觸發者是否為機器人擁有者
+    # 自訂權限檢查：從 config.json 讀取擁有者 ID 來比對
     async def is_owner(interaction: discord.Interaction) -> bool:
-        return interaction.user.id == interaction.client.owner_id
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            owner_id = config.get('OWNER_ID')
+            if isinstance(owner_id, list):
+                return interaction.user.id in owner_id
+            elif isinstance(owner_id, int):
+                return interaction.user.id == owner_id
+        except Exception:
+            pass
+        # 如果沒有 config.json 或發生錯誤，退回使用內建的 is_owner 檢查
+        return await interaction.client.is_owner(interaction.user)
 
     @app_commands.command(name="push", description="強制推送訊息到指定頻道")
     @app_commands.describe(channel_id="頻道 ID (數字)", message="要推送的訊息")
