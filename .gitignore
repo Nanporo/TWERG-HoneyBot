@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 config.json
 honeypot_settings.json
+run.bat
