@@ -63,9 +63,10 @@ class HoneypotCog(commands.Cog):
             return
 
         try:
-            file = discord.File("photos/jinggao.png")
             warning_msg = f"有人（{message.author.mention}）在蜜罐裡面發送訊息了！\n如果你和他一樣在這裡發訊息，你就會一起飛出去！請勿作死！"
-            await message.channel.send(content=warning_msg, file=file)
+            embed = discord.Embed(description=warning_msg, color=discord.Color.red())
+            embed.set_image(url="https://raw.githubusercontent.com/Nanporo/TWERG-HoneyBot/main/photos/jinggao.png")
+            await message.channel.send(embed=embed)
         except Exception as e:
             print(f"⚠️ [Honeypot] 無法在蜜罐頻道發送警告圖片與訊息: {e}")
 
