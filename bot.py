@@ -3,10 +3,16 @@ from discord.ext import commands
 import json
 import os
 import asyncio
+import sys
 
 # 讀取設定檔
-with open('config.json', 'r', encoding='utf-8') as f:
-    config = json.load(f)
+try:
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+except FileNotFoundError:
+    sys.exit("❌ 錯誤：找不到 config.json 檔案！請先根據 README.md 的指示建立設定檔。")
+except json.JSONDecodeError as e:
+    sys.exit(f"❌ 錯誤：config.json 格式錯誤！請檢查是否漏了引號、逗號或是直接貼上了中文提示詞。\n詳細錯誤：{e}")
 
 intents = discord.Intents.default()
 intents.message_content = True
