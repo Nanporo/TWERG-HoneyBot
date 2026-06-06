@@ -166,7 +166,8 @@ class SettingsCog(commands.Cog):
             "🛡️ **伺服器防護與系統設定**\n\n"
             f"預設防護排除身份組: <@&{self.default_excluded_role}>\n"
             "請使用下方選單調整各項功能：", 
-            view=view
+            view=view,
+            ephemeral=True
         )
         view.message = await interaction.original_response()
 
