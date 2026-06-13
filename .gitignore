@@ -182,3 +182,5 @@ cython_debug/
 config.json
 honeypot_settings.json
 run.bat
+fkfeboy_counts.json
+fkfeboy_settings.json
