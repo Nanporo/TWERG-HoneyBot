@@ -182,5 +182,9 @@ cython_debug/
 config.json
 honeypot_settings.json
 run.bat
+<<<<<<< Updated upstream
 fkfeboy_counts.json
 fkfeboy_settings.json
+=======
+.vscode/settings.json
+>>>>>>> Stashed changes
