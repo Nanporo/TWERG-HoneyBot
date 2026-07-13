@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import json
 import os
 
@@ -122,11 +123,24 @@ class FkfeboyCog(commands.Cog):
             return
 
         # 更新次數與最後發言的時間戳記
+        new_count = user_record["c"] + 1
         self.message_counts[author_id] = {
-            "c": user_record["c"] + 1,
+            "c": new_count,
             "t": discord.utils.utcnow().timestamp()
         }
         self._save_counts()
+
+        # 輸出訊息到 OUTPUT_ID
+        try:
+            with open('config.json', 'r', encoding='utf-8') as f:
+                bot_config = json.load(f)
+            output_id = bot_config.get("OUTPUT_ID")
+            if output_id:
+                output_channel = self.bot.get_channel(int(output_id))
+                if output_channel:
+                    await output_channel.send(f"⚠️ 新用戶 {message.author.mention} ({author_id}) 觸發了計數，目前次數：**{new_count}/10**")
+        except Exception as e:
+            print(f"⚠️ [幹男防護] 發送 counts 統計訊息時發生錯誤: {e}")
 
         # 讀取外部設定
         settings = self.get_settings()
@@ -151,7 +165,6 @@ class FkfeboyCog(commands.Cog):
             
             return # 觸發 Ban 後直接結束，不繼續檢查
 
-        # 4. 條件三：如果只是包含違規字眼（而沒有 at 到目標），則是踢出伺服器 (Kick)
         if has_bad_word:
             try:
                 reason = "觸發幹婆你男娘防禦：發布恐嚇或不當字眼"
@@ -161,6 +174,38 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] 機器人權限不足，無法 Kick 用戶 {message.author}")
             except discord.HTTPException as e:
                 print(f"⚠️ [幹男防護] Kick 用戶時發生錯誤: {e}")
+
+    @app_commands.command(name="counts", description="查看目前的發言統計 (僅限管理員)")
+    @app_commands.default_permissions(administrator=True)
+    async def counts_command(self, interaction: discord.Interaction):
+        if not self.message_counts:
+            await interaction.response.send_message("目前沒有任何統計資料。", ephemeral=True)
+            return
+
+        lines = []
+        for author_id, data in self.message_counts.items():
+            count = data.get("c", 0) if isinstance(data, dict) else data
+            member = interaction.guild.get_member(int(author_id))
+            
+            if member:
+                created_ts = int(member.created_at.timestamp())
+                joined_ts = int(member.joined_at.timestamp()) if member.joined_at else None
+                join_str = f"<t:{joined_ts}:d>" if joined_ts else "未知"
+                lines.append(f"• <@{author_id}>\n　創建: <t:{created_ts}:d> | 加入: {join_str} | 次數: **{count}**")
+            else:
+                user = self.bot.get_user(int(author_id))
+                if user:
+                    created_ts = int(user.created_at.timestamp())
+                    lines.append(f"• <@{author_id}>\n　創建: <t:{created_ts}:d> | 加入: 已離開 | 次數: **{count}**")
+                else:
+                    lines.append(f"• <@{author_id}>\n　創建: 未知 | 加入: 未知 | 次數: **{count}**")
+            
+        content = "\n\n".join(lines)
+        if len(content) > 4000:
+            content = content[:4000] + "\n\n... (訊息過長已截斷)"
+            
+        embed = discord.Embed(title="📊 發言統計", description=content, color=discord.Color.blue())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(FkfeboyCog(bot))
