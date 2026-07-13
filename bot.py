@@ -1,3 +1,16 @@
+import ssl
+import certifi
+
+# Fix for "ssl.SSLError: [ASN1: NOT_ENOUGH_DATA] not enough data" on Windows
+orig_create_default_context = ssl.create_default_context
+
+def patched_create_default_context(purpose=ssl.Purpose.SERVER_AUTH, *, cafile=None, capath=None, cadata=None):
+    if cafile is None and capath is None and cadata is None:
+        cafile = certifi.where()
+    return orig_create_default_context(purpose, cafile=cafile, capath=capath, cadata=cadata)
+
+ssl.create_default_context = patched_create_default_context
+
 import discord
 from discord.ext import commands
 import json
