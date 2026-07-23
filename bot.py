@@ -28,7 +28,7 @@ except json.JSONDecodeError as e:
     sys.exit(f"❌ 錯誤：config.json 格式錯誤！請檢查是否漏了引號、逗號或是直接貼上了中文提示詞。\n詳細錯誤：{e}")
 
 intents = discord.Intents.default()
-intents.members = True
+intents.members = False
 intents.message_content = True
 
 bot = commands.Bot(

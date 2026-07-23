@@ -185,20 +185,12 @@ class FkfeboyCog(commands.Cog):
         lines = []
         for author_id, data in self.message_counts.items():
             count = data.get("c", 0) if isinstance(data, dict) else data
-            member = interaction.guild.get_member(int(author_id))
-            
-            if member:
-                created_ts = int(member.created_at.timestamp())
-                joined_ts = int(member.joined_at.timestamp()) if member.joined_at else None
-                join_str = f"<t:{joined_ts}:d>" if joined_ts else "未知"
-                lines.append(f"• <@{author_id}>\n　創建: <t:{created_ts}:d> | 加入: {join_str} | 次數: **{count}**")
-            else:
-                user = self.bot.get_user(int(author_id))
-                if user:
-                    created_ts = int(user.created_at.timestamp())
-                    lines.append(f"• <@{author_id}>\n　創建: <t:{created_ts}:d> | 加入: 已離開 | 次數: **{count}**")
-                else:
-                    lines.append(f"• <@{author_id}>\n　創建: 未知 | 加入: 未知 | 次數: **{count}**")
+            try:
+                created_ts = int(discord.utils.snowflake_time(int(author_id)).timestamp())
+                created_str = f"<t:{created_ts}:d>"
+            except Exception:
+                created_str = "未知"
+            lines.append(f"• <@{author_id}>\n　創建: {created_str} | 次數: **{count}**")
             
         content = "\n\n".join(lines)
         if len(content) > 4000:
