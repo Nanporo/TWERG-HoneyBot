@@ -42,7 +42,8 @@ bot = commands.Bot(
 async def on_ready():
     # 同步斜線指令到 Discord 伺服器
     await bot.tree.sync()
-    print(f'登入成功！, 總計 {len(bot.users)} 個用戶，位於 {len(bot.guilds)} 個伺服器中。')
+    total_members = sum(guild.member_count for guild in bot.guilds if guild.member_count)
+    print(f'登入成功！, 總計 {total_members} 個成員，位於 {len(bot.guilds)} 個伺服器中。')
     activity = discord.Activity(type=discord.ActivityType.watching, name='地震監視')
     await bot.change_presence(activity=activity)
 
