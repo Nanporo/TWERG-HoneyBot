@@ -189,3 +189,7 @@ fkfeboy_settings.json
 .vscode/settings.json
 >>>>>>> Stashed changes
 .DS_Store
+fkfeboy_counts.db-shm
+fkfeboy_counts.json.bak
+fkfeboy_counts.db-wal
+fkfeboy_counts.db
