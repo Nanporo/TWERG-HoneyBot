@@ -5,6 +5,8 @@ import json
 import os
 import sqlite3
 import re
+import difflib
+import datetime
 
 class FkfeboyCog(commands.Cog):
     def __init__(self, bot):
@@ -13,7 +15,9 @@ class FkfeboyCog(commands.Cog):
         self.db_file = 'fkfeboy_counts.db'
         self._cached_settings = None
         self._last_mtime = 0
-        
+        self.user_msg_history = {}  # 近期用戶發言歷史記錄 {user_id: [(timestamp, norm_content, raw_content)]}
+        self.user_img_history = {}  # 近期用戶圖片發言歷史記錄 {user_id: [timestamp, ...]}
+
         # 初始化 SQLite 資料庫並進行自動移轉
         self._init_db()
         self._migrate_from_json()
@@ -120,7 +124,8 @@ class FkfeboyCog(commands.Cog):
             return 1
 
     async def _send_kill_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
-        """當成功封鎖惡意用戶時，在觸發頻道發送通報 Embed"""
+        """當成功封鎖惡意用戶時，在觸發頻道與 CONSOLE 頻道發送通報 Embed"""
+        embed = None
         try:
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容或暱稱觸發)*"
             embed = discord.Embed(
@@ -140,6 +145,55 @@ class FkfeboyCog(commands.Cog):
         except Exception as e:
             print(f"⚠️ [幹男防護] 無法在頻道 {channel.id} 發送擊殺通報訊息: {e}")
 
+        # 同時抄送至 CONSOLE_ID 頻道
+        if embed:
+            try:
+                if os.path.exists('config.json'):
+                    with open('config.json', 'r', encoding='utf-8') as f:
+                        bot_config = json.load(f)
+                    console_id = bot_config.get("CONSOLE_ID")
+                    if console_id:
+                        console_channel = self.bot.get_channel(int(console_id))
+                        if console_channel and console_channel.id != channel.id:
+                            await console_channel.send(embed=embed, content="🚨 惡意用戶已驅逐")
+            except Exception as ce:
+                print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送擊殺通報: {ce}")
+
+    async def _send_timeout_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
+        """當自動處決禁言洗板用戶時，在觸發頻道與 CONSOLE 頻道發送 Embed 通報"""
+        embed = None
+        try:
+            content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容)*"
+            embed = discord.Embed(
+                title="",
+                description=(
+                    f"🛑 已對涉嫌洗板用戶 {author.mention} (`{author.name}`) 執行 **1 小時禁言** 處置。\n\n"
+                    f"**原因**：{reason_summary}。\n"
+                    f"**觸發訊息**：\n{content_display}\n"
+                    f"請管理員注意是否有持續騷擾行為。"
+                ),
+                color=discord.Color.orange()
+            )
+            embed.set_thumbnail(url=author.display_avatar.url)
+            embed.set_footer(text="TWERG HoneyBot 防護系統")
+            await channel.send(embed=embed, content="🚨 新用戶重複洗板已自動禁言")
+        except Exception as e:
+            print(f"⚠️ [幹男防護] 無法發送禁言通報訊息: {e}")
+
+        # 同時抄送至 CONSOLE_ID 頻道
+        if embed:
+            try:
+                if os.path.exists('config.json'):
+                    with open('config.json', 'r', encoding='utf-8') as f:
+                        bot_config = json.load(f)
+                    console_id = bot_config.get("CONSOLE_ID")
+                    if console_id:
+                        console_channel = self.bot.get_channel(int(console_id))
+                        if console_channel and console_channel.id != channel.id:
+                            await console_channel.send(embed=embed, content="🚨 新用戶重複洗板已自動禁言")
+            except Exception as ce:
+                print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
+
     def get_settings(self):
         """
         讀取或初始化幹男防禦設定檔 (fkfeboy_settings.json)。
@@ -153,6 +207,7 @@ class FkfeboyCog(commands.Cog):
                 815574915901554699, # ExpTech 管理員 / eggrollpvp
                 69370157784371200, 
                 675922096425009184, # Yoyo0901
+                277499904266338304, # YoWoApple
             ],
             "bad_words": [
                 # 1. 傳統粗口、公然侮辱與威脅詞根
@@ -177,7 +232,7 @@ class FkfeboyCog(commands.Cog):
                 "毀滅", "巨震", "大噴發", "預報", "預測", "預側", 
                 "雙北毀", "開香檳", "香檳", "靈氣強震", "3主震", "選我正解", "正解",
                 "COMPUTEX", "101世貿", "南港館", "綁起來", "炸掉", "賴先生", "恐龍", "暴龍",
-                "宿舍", "欠捅", "欠炸"
+                "宿舍", "欠捅", "欠炸", "屎"
             ]
         }
 
@@ -193,29 +248,33 @@ class FkfeboyCog(commands.Cog):
             with open(self.settings_file, 'r', encoding='utf-8') as f:
                 try: 
                     settings = json.load(f)
-                    updated = False
-
-                    # 自動將新增的廣泛預設關鍵字與目標用戶併入既有設定檔
-                    existing_bad_words = set(settings.get("bad_words", []))
-                    for bw in default_settings["bad_words"]:
-                        if bw not in existing_bad_words:
-                            settings.setdefault("bad_words", []).append(bw)
-                            updated = True
-
-                    existing_targets = set(settings.get("target_users", []))
-                    for tu in default_settings["target_users"]:
-                        if tu not in existing_targets:
-                            settings.setdefault("target_users", []).append(tu)
-                            updated = True
-
-                    if updated:
-                        with open(self.settings_file, 'w', encoding='utf-8') as wf:
-                            json.dump(settings, wf, ensure_ascii=False, indent=4)
-
-                    self._cached_settings = settings
-                    self._last_mtime = os.path.getmtime(self.settings_file)
                 except json.JSONDecodeError: 
-                    return default_settings
+                    settings = default_settings
+
+            self._cached_settings = settings
+            self._last_mtime = current_mtime
+
+        # 確保程式碼內新增的 default_settings (如 target_users 與 bad_words) 必定強制併入快取與 JSON 檔中
+        updated = False
+        existing_bad_words = set(self._cached_settings.get("bad_words", []))
+        for bw in default_settings["bad_words"]:
+            if bw not in existing_bad_words:
+                self._cached_settings.setdefault("bad_words", []).append(bw)
+                updated = True
+
+        existing_targets = set(self._cached_settings.get("target_users", []))
+        for tu in default_settings["target_users"]:
+            if tu not in existing_targets:
+                self._cached_settings.setdefault("target_users", []).append(tu)
+                updated = True
+
+        if updated:
+            try:
+                with open(self.settings_file, 'w', encoding='utf-8') as wf:
+                    json.dump(self._cached_settings, wf, ensure_ascii=False, indent=4)
+                self._last_mtime = os.path.getmtime(self.settings_file)
+            except Exception as e:
+                print(f"⚠️ [幹男防護] 同步寫入設定檔失敗: {e}")
 
         return self._cached_settings
 
@@ -253,17 +312,17 @@ class FkfeboyCog(commands.Cog):
                 return
 
         # 1. 雙重判斷門檻：
-        # - 帳號註冊時間在 90 天以內 (is_new_account)
-        # - 或 加入伺服器時間在 30 天以內 (is_recent_join)
+        # - 帳號註冊時間在 180 天 (6 個月) 以內 (is_new_account)
+        # - 或 加入伺服器時間在 90 天以內 (is_recent_join)
         now = discord.utils.utcnow()
         account_age_days = (now - message.author.created_at).days
         joined_at = getattr(message.author, 'joined_at', None)
         join_age_days = (now - joined_at).days if joined_at else None
 
-        is_new_account = account_age_days <= 90
-        is_recent_join = join_age_days is not None and join_age_days <= 30
+        is_new_account = account_age_days <= 180
+        is_recent_join = join_age_days is not None and join_age_days <= 90
 
-        # 若既不是新創帳號，也不是近期剛加入的成員，則忽略防禦檢查
+        # 若既不是 6 個月內新創帳號，也不是 90 天內剛加入的成員，則忽略防禦檢查
         if not (is_new_account or is_recent_join):
             return
 
@@ -304,8 +363,13 @@ class FkfeboyCog(commands.Cog):
 
         mentioned_target_count = sum(1 for user in message.mentions if user.id in target_users)
 
-        # ⚡【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 直接 BAN 並發送頻道通報
+        # ⚡【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
         if mentioned_target_count >= 1:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
             try:
                 reason = "觸發幹婆你男娘防禦：新用戶前10筆訊息惡意標記保護對象"
                 await message.author.ban(reason=reason, delete_message_seconds=1800)
@@ -317,12 +381,103 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
             return
 
-        # 文字內容與顯示暱稱雙重關鍵字檢測（包含正規化與原字串比對）
-        raw_content = message.content or ""
+        # ⚡【精準擊殺規則 3】：新用戶短時間內連續發送 3 則包含圖片/附件的訊息 -> 直接 BAN
+        has_attachments = len(message.attachments) > 0
+        now_ts = discord.utils.utcnow().timestamp()
+
+        # 追蹤與過濾近 60 秒內發送圖片/附件的歷史紀錄
+        user_img_history = self.user_img_history.get(author_id, [])
+        user_img_history = [t for t in user_img_history if now_ts - t <= 60]
+
+        if has_attachments:
+            user_img_history.append(now_ts)
+            self.user_img_history[author_id] = user_img_history
+
+        # 觸發條件：短時間 (60秒) 內發送 3 則包含圖片/附件的訊息
+        if len(user_img_history) >= 3:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            try:
+                reason = "觸發幹婆你男娘防禦：新用戶短時間內連續發送 3 則圖片/附件訊息惡意洗板"
+                await message.author.ban(reason=reason, delete_message_seconds=1800)
+                print(f"🚨 [幹男防護] 已 Ban 惡意用戶 {message.author} ({message.author.id}) - 理由: 短時間內連續發送 3 則圖片訊息")
+                await self._send_kill_announcement(message.channel, message.author, "新用戶短時間內連續發送 3 則圖片/附件訊息惡意洗板", raw_content=message.content)
+            except discord.Forbidden:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+            except discord.HTTPException as e:
+                print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
+            return
+
+        # 文字內容、附件檔名與顯示暱稱關鍵字檢測（包含正規化與原字串比對）
+        attachment_names = " ".join(att.filename for att in message.attachments) if message.attachments else ""
+        raw_content = ((message.content or "") + " " + attachment_names).strip()
         norm_content = self._normalize_text(raw_content)
         
         raw_name = getattr(message.author, 'display_name', '') or ""
         norm_name = self._normalize_text(raw_name)
+
+        # ⚡【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
+        # 1. 剔除 Discord Mentions (使用者/身分組標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
+        text_without_mentions = re.sub(r'<[@#]&?!\d+>', '', raw_content).strip()
+        norm_text_no_mentions = self._normalize_text(text_without_mentions)
+
+        # 2. 歷史發言處理 (保留近 60 秒發言紀錄)
+        history = self.user_msg_history.get(author_id, [])
+        history = [h for h in history if now_ts - h[0] <= 60]
+
+        exact_duplicate_count = 0
+        similar_count = 0
+
+        for past_ts, past_norm, past_raw in history:
+            # 完整原文（正規化後）完全相同
+            if norm_content and norm_content == past_norm:
+                exact_duplicate_count += 1
+            # 剔除 @標記後的文字內容完全相同
+            elif norm_text_no_mentions and norm_text_no_mentions == self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw)):
+                similar_count += 1
+            # 高度相似性比對：僅在非 Mention 文字長度 >= 8 字元時進行 (閥值提高至 90%)
+            elif len(norm_text_no_mentions) >= 8:
+                past_no_mention = self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw))
+                if len(past_no_mention) >= 8:
+                    ratio = difflib.SequenceMatcher(None, norm_text_no_mentions, past_no_mention).ratio()
+                    if ratio >= 0.90:
+                        similar_count += 1
+
+        history.append((now_ts, norm_content, raw_content))
+        self.user_msg_history[author_id] = history
+
+        # 觸發洗板防誤判條件：
+        # - 完全相同訊息允許發送 3 次 (第 4 次觸發: exact_duplicate_count >= 3)
+        # - 扣除標記後高度相似訊息允許發送 5 次 (第 6 次觸發: similar_count >= 5)
+        # - 近 60 秒內發言總數達到 7 次以上 (極高頻率洗板)
+        is_spam = (exact_duplicate_count >= 3) or (similar_count >= 5) or (len(history) >= 7)
+
+        if is_spam:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            try:
+                if exact_duplicate_count >= 3:
+                    reason_text = "新用戶發送超過 3 次完全相同訊息洗板"
+                elif similar_count >= 5:
+                    reason_text = "新用戶發送超過 5 次高度相似訊息洗板"
+                else:
+                    reason_text = "新用戶 60 秒內高頻發言 (>= 7 次) 洗板"
+
+                if isinstance(message.author, discord.Member):
+                    await message.author.timeout(datetime.timedelta(hours=1), reason=f"觸發幹婆你男娘防禦：{reason_text}")
+                print(f"🛑 [幹男防護] 已禁言洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
+                await self._send_timeout_announcement(message.channel, message.author, reason_text, raw_content=raw_content)
+            except discord.Forbidden:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
+            except discord.HTTPException as e:
+                print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
+            return
 
         # 1. 傳統與擴充關鍵字庫比對
         content_has_bad_word = any(word in raw_content or word in norm_content for word in bad_words)
@@ -356,6 +511,17 @@ class FkfeboyCog(commands.Cog):
             re.search(pat, raw_content, re.IGNORECASE) or re.search(pat, norm_content, re.IGNORECASE)
             for pat in regex_patterns
         )
+
+        # 地震群單純感嘆詞豁免白名單 (如單字「幹」或三字「幹你娘/幹妳娘」純感嘆時免受 BAN 懲罰)
+        exempted_interjections = {"幹", "幹你娘", "幹妳娘"}
+
+        # 檢查命中的 bad_words 是否全屬於豁免感嘆詞
+        matched_bad_words = [word for word in bad_words if word in raw_content or word in norm_content]
+        is_only_interjection_matched = matched_bad_words and all(bw in exempted_interjections for bw in matched_bad_words)
+
+        # 判定是否包含其他攻擊性內容：如果只命中豁免感嘆詞、且無正則恐嚇、無暱稱違規，則進行豁免
+        if is_only_interjection_matched and not name_has_bad_word and not has_regex_match:
+            content_has_bad_word = False
 
         has_bad_word = content_has_bad_word or name_has_bad_word or has_regex_match
 
