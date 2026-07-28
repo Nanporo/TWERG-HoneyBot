@@ -17,6 +17,7 @@ class FkfeboyCog(commands.Cog):
         self._last_mtime = 0
         self.user_msg_history = {}  # 近期用戶發言歷史記錄 {user_id: [(timestamp, norm_content, raw_content)]}
         self.user_img_history = {}  # 近期用戶圖片發言歷史記錄 {user_id: [timestamp, ...]}
+        self.user_header_history = {}  # 近期用戶標題大字發言歷史記錄 {user_id: [is_header_bool, ...]}
 
         # 初始化 SQLite 資料庫並進行自動移轉
         self._init_db()
@@ -200,6 +201,7 @@ class FkfeboyCog(commands.Cog):
         若 JSON 已存在，自動升級並合併廣泛化與詞根化的預設關鍵字。
         """
         default_settings = {
+            "global_monitor": False,
             "target_users": [
                 964849855396741130,
                 1356782484565790840, # 台灣 Online 管理員 / 頑固苗獨份子
@@ -254,8 +256,11 @@ class FkfeboyCog(commands.Cog):
             self._cached_settings = settings
             self._last_mtime = current_mtime
 
-        # 確保程式碼內新增的 default_settings (如 target_users 與 bad_words) 必定強制併入快取與 JSON 檔中
+        # 確保程式碼內新增的 default_settings (如 global_monitor, target_users 與 bad_words) 必定強制併入快取與 JSON 檔中
         updated = False
+        if "global_monitor" not in self._cached_settings:
+            self._cached_settings["global_monitor"] = False
+            updated = True
         existing_bad_words = set(self._cached_settings.get("bad_words", []))
         for bw in default_settings["bad_words"]:
             if bw not in existing_bad_words:
@@ -298,18 +303,44 @@ class FkfeboyCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # 忽略機器人與私訊
-        if message.author.bot or message.guild is None:
+        # 忽略機器人、系統訊息與私訊
+        if message.author.bot or message.guild is None or message.is_system():
             return
 
-        # 免疫檢查：伺服器管理員或身份組層級不低於機器人者免受懲罰
+        # 免疫檢查：伺服器管理員、排除身份組或身份組層級不低於機器人者免受懲罰
         if isinstance(message.author, discord.Member):
+            excluded_roles = [518700481011253269]
+            if os.path.exists('honeypot_settings.json'):
+                try:
+                    with open('honeypot_settings.json', 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        guild_data = data.get(str(message.guild.id), {})
+                        if isinstance(guild_data, dict):
+                            excluded_roles.extend(guild_data.get("excluded_roles", []))
+                except Exception:
+                    pass
+
+            has_excluded_role = any(role.id in excluded_roles for role in message.author.roles)
             is_immune = (
+                has_excluded_role or
                 message.author.guild_permissions.administrator or
                 (message.guild.me and message.author.top_role >= message.guild.me.top_role)
             )
             if is_immune:
                 return
+
+        author_id = str(message.author.id)
+        
+        # 從 SQLite 讀取用戶紀錄
+        user_record = self._get_user_record(author_id)
+        
+        # 2. 檢查他發布的前 10 筆訊息
+        # 如果已經達到 10 筆，就不再進行後續記錄與防禦流程 (節省效能)
+        if user_record["c"] >= 10:
+            return
+
+        # 更新 SQLite 記錄並回傳最新發言次數 (所有未滿10次的非免疫用戶，不論新舊帳號皆進行後台計數)
+        new_count = self._increment_user_count(author_id)
 
         # 1. 雙重判斷門檻：
         # - 帳號註冊時間在 180 天 (6 個月) 以內 (is_new_account)
@@ -322,23 +353,15 @@ class FkfeboyCog(commands.Cog):
         is_new_account = account_age_days <= 180
         is_recent_join = join_age_days is not None and join_age_days <= 90
 
-        # 若既不是 6 個月內新創帳號，也不是 90 天內剛加入的成員，則忽略防禦檢查
-        if not (is_new_account or is_recent_join):
-            return
+        # 讀取外部設定 (全域監控開關)
+        settings = self.get_settings()
+        global_monitor = settings.get("global_monitor", False)
 
-        # JSON 格式的 key 必須是字串，轉換 ID 型別
-        author_id = str(message.author.id)
-        
-        # 從 SQLite 讀取用戶紀錄
-        user_record = self._get_user_record(author_id)
-        
-        # 2. 檢查他發布的前 10 筆訊息
-        # 如果已經達到 10 筆，就不再進行後續防禦流程 (節省效能)
-        if user_record["c"] >= 10:
+        # 防禦檢查與頻道通報門檻：
+        # 若 global_monitor 為 False 且既不是 6 個月內新創帳號，也不是 90 天內剛加入的成員，則僅於後台記錄次數，不執行防禦與通報
+        should_defend = global_monitor or is_new_account or is_recent_join
+        if not should_defend:
             return
-
-        # 更新 SQLite 記錄並回傳最新發言次數
-        new_count = self._increment_user_count(author_id)
 
         # 輸出訊息到 OUTPUT_ID
         try:
@@ -349,15 +372,14 @@ class FkfeboyCog(commands.Cog):
                 output_channel = self.bot.get_channel(int(output_id))
                 if output_channel:
                     join_str = f"{join_age_days}天" if join_age_days is not None else "未知"
+                    tag_prefix = "[全域監控] " if global_monitor and not (is_new_account or is_recent_join) else ""
                     await output_channel.send(
-                        f"⚠️ 新用戶 {message.author.mention} ({author_id}) 觸發了計數 "
+                        f"⚠️ {tag_prefix}用戶 {message.author.mention} ({author_id}) 觸發了計數 "
                         f"[帳號:{account_age_days}天 | 進群:{join_str}]，目前次數：**{new_count}/10**"
                     )
         except Exception as e:
             print(f"⚠️ [幹男防護] 發送 counts 統計訊息時發生錯誤: {e}")
 
-        # 讀取外部設定
-        settings = self.get_settings()
         target_users = set(settings.get("target_users", []))
         bad_words = settings.get("bad_words", [])
 
@@ -381,7 +403,7 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準擊殺規則 3】：新用戶短時間內連續發送 3 則包含圖片/附件的訊息 -> 直接 BAN
+        # ⚡【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
         has_attachments = len(message.attachments) > 0
         now_ts = discord.utils.utcnow().timestamp()
 
@@ -393,22 +415,48 @@ class FkfeboyCog(commands.Cog):
             user_img_history.append(now_ts)
             self.user_img_history[author_id] = user_img_history
 
-        # 觸發條件：短時間 (60秒) 內發送 3 則包含圖片/附件的訊息
-        if len(user_img_history) >= 3:
+        # 觸發條件：短時間 (60秒) 內發送 5 則包含圖片/附件的訊息
+        if len(user_img_history) >= 5:
             try:
                 await message.delete()
             except Exception:
                 pass
 
             try:
-                reason = "觸發幹婆你男娘防禦：新用戶短時間內連續發送 3 則圖片/附件訊息惡意洗板"
-                await message.author.ban(reason=reason, delete_message_seconds=1800)
-                print(f"🚨 [幹男防護] 已 Ban 惡意用戶 {message.author} ({message.author.id}) - 理由: 短時間內連續發送 3 則圖片訊息")
-                await self._send_kill_announcement(message.channel, message.author, "新用戶短時間內連續發送 3 則圖片/附件訊息惡意洗板", raw_content=message.content)
+                reason_text = "新用戶 60 秒內連續發送 5 則圖片/附件訊息洗板"
+                if isinstance(message.author, discord.Member):
+                    await message.author.timeout(datetime.timedelta(hours=1), reason=f"觸發幹婆你男娘防禦：{reason_text}")
+                print(f"🛑 [幹男防護] 已禁言圖片洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
+                await self._send_timeout_announcement(message.channel, message.author, reason_text, raw_content=message.content)
             except discord.Forbidden:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
             except discord.HTTPException as e:
-                print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
+                print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
+            return
+
+        # ⚡【精準禁言規則 5】：新用戶連續 3 則訊息皆使用 "#" 放大標題 Markdown 格式洗板 -> 禁言 1 小時
+        is_header_format = any(line.strip().startswith('#') for line in (message.content or "").splitlines())
+        user_headers = self.user_header_history.get(author_id, [])
+        user_headers.append(is_header_format)
+        self.user_header_history[author_id] = user_headers
+
+        # 觸發條件：連續 3 則訊息均包含 "#" 大字體 Markdown 格式
+        if len(user_headers) >= 3 and all(user_headers[-3:]):
+            try:
+                await message.delete()
+            except Exception:
+                pass
+
+            try:
+                reason_text = "新用戶發送訊息連續 3 則皆使用「#」大字體 Markdown 格式洗板"
+                if isinstance(message.author, discord.Member):
+                    await message.author.timeout(datetime.timedelta(hours=1), reason=f"觸發幹婆你男娘防禦：{reason_text}")
+                print(f"🚨 [幹男防護] 已禁言大字洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
+                await self._send_timeout_announcement(message.channel, message.author, reason_text, raw_content=message.content)
+            except discord.Forbidden:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
+            except discord.HTTPException as e:
+                print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
             return
 
         # 文字內容、附件檔名與顯示暱稱關鍵字檢測（包含正規化與原字串比對）
@@ -548,29 +596,47 @@ class FkfeboyCog(commands.Cog):
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT user_id, count FROM message_counts ORDER BY count DESC")
-                rows = cursor.fetchall()
+                cursor.execute("SELECT COUNT(*) FROM message_counts WHERE count < 10")
+                pending_count = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM message_counts WHERE count >= 10")
+                completed_count = cursor.fetchone()[0]
+
+                # 優先抓出還在監控中 (count < 10) 的用戶，最多列出 30 筆
+                cursor.execute("SELECT user_id, count FROM message_counts WHERE count < 10 ORDER BY count DESC LIMIT 30")
+                pending_rows = cursor.fetchall()
         except Exception as e:
             await interaction.response.send_message(f"❌ 查詢資料庫時發生錯誤: {e}", ephemeral=True)
             return
 
-        if not rows:
-            await interaction.response.send_message("目前沒有任何統計資料。", ephemeral=True)
-            return
+        settings = self.get_settings()
+        global_monitor = settings.get("global_monitor", False)
+        status_str = "已開啟 🟢 (已包含潛水舊用戶)" if global_monitor else "已關閉 🔴 (僅限新帳號/新成員)"
 
-        lines = []
-        for author_id, count in rows:
-            try:
-                created_ts = int(discord.utils.snowflake_time(int(author_id)).timestamp())
-                created_str = f"<t:{created_ts}:d>"
-            except Exception:
-                created_str = "未知"
-            lines.append(f"• <@{author_id}>\n　創建: {created_str} | 次數: **{count}**")
-            
-        content = "\n\n".join(lines)
+        summary_header = (
+            f"🛡️ **全域監控狀態**：{status_str}\n"
+            f"📊 **統計總覽**：監控中 (`<10`次)：**{pending_count}** 人 | 已畢業 (`>=10`次)：**{completed_count}** 人\n"
+            f"───────────────────────────"
+        )
+
+        lines = [summary_header]
+
+        if pending_rows:
+            lines.append("🔍 **目前監控中用戶 (未滿 10 次)**：")
+            for author_id, count in pending_rows:
+                try:
+                    created_ts = int(discord.utils.snowflake_time(int(author_id)).timestamp())
+                    created_str = f"<t:{created_ts}:d>"
+                except Exception:
+                    created_str = "未知"
+                lines.append(f"• <@{author_id}> ── 創建: {created_str} | 次數: **{count}/10**")
+        else:
+            lines.append("✅ 目前沒有任何未滿 10 次的監控中用戶。")
+
+        content = "\n".join(lines)
         if len(content) > 4000:
-            content = content[:4000] + "\n\n... (訊息過長已截斷)"
-            
+            content = content[:4000] + "\n... (訊息過長已截斷)"
+
         embed = discord.Embed(title="📊 發言統計 (SQLite)", description=content, color=discord.Color.blue())
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -53,6 +53,21 @@ class SettingsView(discord.ui.View):
         self.toggle_btn.callback = self.toggle_callback
         self.add_item(self.toggle_btn)
 
+        # 前10則全域監控開關按鈕
+        fkfeboy_cog = cog.bot.get_cog('FkfeboyCog')
+        is_global_mon = False
+        if fkfeboy_cog:
+            fkfeboy_settings = fkfeboy_cog.get_settings()
+            is_global_mon = fkfeboy_settings.get("global_monitor", False)
+
+        self.global_mon_btn = discord.ui.Button(
+            label="前10則全域監控: 已啟用" if is_global_mon else "前10則全域監控: 已停用",
+            style=discord.ButtonStyle.green if is_global_mon else discord.ButtonStyle.red,
+            row=3
+        )
+        self.global_mon_btn.callback = self.global_mon_callback
+        self.add_item(self.global_mon_btn)
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 只有伺服器管理員才能操作此設定面板！", ephemeral=True)
@@ -104,15 +119,23 @@ class SettingsView(discord.ui.View):
 
         console_id_str = f"<#{console_id}>" if console_id else "未設定"
 
+        fkfeboy_cog = self.cog.bot.get_cog('FkfeboyCog')
+        is_global_mon = False
+        if fkfeboy_cog:
+            fkfeboy_settings = fkfeboy_cog.get_settings()
+            is_global_mon = fkfeboy_settings.get("global_monitor", False)
+        global_mon_str = "已啟用 (對所有發言未滿10次者實施監控)" if is_global_mon else "已停用 (僅防禦新帳號與新進成員)"
+
         embed = discord.Embed(
             title="🛡️ 伺服器防護與系統設定",
-            description="請使用下方選單調整各項功能：",
+            description="請使用下方選單與按鈕調整各項功能：",
             color=discord.Color.blue()
         )
         embed.add_field(name="預設防護排除身份組", value=f"<@&{self.cog.default_excluded_role}>", inline=False)
         embed.add_field(name="目前排除防護身份組", value=excluded_roles_str, inline=False)
         embed.add_field(name="目前陷阱身份組", value=trap_roles_str, inline=False)
         embed.add_field(name="封鎖時刪除近30分鐘訊息", value=delete_messages_str, inline=False)
+        embed.add_field(name="前10則全域監控 (包含潛水舊用戶)", value=global_mon_str, inline=False)
         embed.add_field(name="Console 輸出頻道", value=console_id_str, inline=False)
 
         return embed
@@ -149,6 +172,35 @@ class SettingsView(discord.ui.View):
         await interaction.response.edit_message(content=None, embed=embed, view=self)
         
         reply_embed = discord.Embed(description=f"✅ 封鎖時刪除近30分鐘訊息功能已 **{'啟用' if new_val else '停用'}**", color=discord.Color.green())
+        await interaction.followup.send(embed=reply_embed, ephemeral=True)
+
+    async def global_mon_callback(self, interaction: discord.Interaction):
+        fkfeboy_cog = self.cog.bot.get_cog('FkfeboyCog')
+        if not fkfeboy_cog:
+            await interaction.response.send_message("❌ 無法取得 FkfeboyCog 模組！", ephemeral=True)
+            return
+
+        settings = fkfeboy_cog.get_settings()
+        new_val = not settings.get("global_monitor", False)
+        settings["global_monitor"] = new_val
+
+        try:
+            with open(fkfeboy_cog.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, ensure_ascii=False, indent=4)
+            fkfeboy_cog._cached_settings = settings
+            fkfeboy_cog._last_mtime = os.path.getmtime(fkfeboy_cog.settings_file)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ 更新設定失敗: {e}", ephemeral=True)
+            return
+
+        self.global_mon_btn.label = "前10則全域監控: 已啟用" if new_val else "前10則全域監控: 已停用"
+        self.global_mon_btn.style = discord.ButtonStyle.green if new_val else discord.ButtonStyle.red
+
+        embed = self.generate_embed(interaction.guild)
+        await interaction.response.edit_message(content=None, embed=embed, view=self)
+
+        status_msg = "已 **啟用** (所有聊天次數未滿 10 次者包含舊潛水用戶發言均會受防禦監控)" if new_val else "已 **停用** (僅針對新帳號與新進成員進行監控)"
+        reply_embed = discord.Embed(description=f"✅ 前10則全域監控功能{status_msg}", color=discord.Color.green())
         await interaction.followup.send(embed=reply_embed, ephemeral=True)
 
     async def console_callback(self, interaction: discord.Interaction):
