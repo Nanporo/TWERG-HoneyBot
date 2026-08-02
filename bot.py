@@ -31,10 +31,18 @@ intents = discord.Intents.default()
 intents.members = False
 intents.message_content = True
 
+owner_id_cfg = config.get('OWNER_ID')
+if isinstance(owner_id_cfg, list):
+    owner_ids = set(owner_id_cfg)
+elif isinstance(owner_id_cfg, int):
+    owner_ids = {owner_id_cfg}
+else:
+    owner_ids = None
+
 bot = commands.Bot(
     command_prefix=(), 
     intents=intents, 
-    owner_ids=config.get('OWNER_ID'), 
+    owner_ids=owner_ids, 
     help_command=None
 )
 
