@@ -412,7 +412,7 @@ class FkfeboyCog(commands.Cog):
         explicit_mentions = self._get_explicit_mentions(message)
         mentioned_target_count = sum(1 for user in explicit_mentions if user.id in target_users)
 
-        # ⚡【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
+        #【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
         if mentioned_target_count >= 1:
             try:
                 await message.delete()
@@ -430,7 +430,7 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
+        #【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
         has_attachments = len(message.attachments) > 0
         now_ts = discord.utils.utcnow().timestamp()
 
@@ -461,7 +461,7 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準禁言規則 5】：大字體洗板與組合騷擾打擊
+        #【精準禁言規則 5】：大字體洗板與組合騷擾打擊
         is_header_format = any(line.strip().startswith('#') for line in (message.content or "").splitlines())
         user_headers = self.user_header_history.get(author_id, [])
         user_headers.append(is_header_format)
