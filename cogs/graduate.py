@@ -62,14 +62,14 @@ class GraduateCog(commands.Cog):
         success = self._graduate_user(user_id_str)
         if success:
             embed = discord.Embed(
-                title="✅ 用戶已手動畢業",
+                title="",
                 description=(
                     f"已成功將用戶 {user.mention} (`{user.id}`) 的發言次數從 **{old_count}/10** 手動更新為 **10/10**（已畢業）。\n\n"
                     f"該用戶之後將不受監控。"
                 ),
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(content="✅ 用戶已手動畢業", embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message("❌ 更新資料庫時發生錯誤，請查看 Console 日誌。", ephemeral=True)
 
