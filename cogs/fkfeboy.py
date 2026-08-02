@@ -18,6 +18,7 @@ class FkfeboyCog(commands.Cog):
         self.user_msg_history = {}  # 近期用戶發言歷史記錄 {user_id: [(timestamp, norm_content, raw_content)]}
         self.user_img_history = {}  # 近期用戶圖片發言歷史記錄 {user_id: [timestamp, ...]}
         self.user_header_history = {}  # 近期用戶標題大字發言歷史記錄 {user_id: [is_header_bool, ...]}
+        self.eew_pause_until = 0.0  # 地震速報連動暫停截止時間戳 (UTC timestamp)
 
         # 初始化 SQLite 資料庫並進行自動移轉
         self._init_db()
@@ -325,8 +326,58 @@ class FkfeboyCog(commands.Cog):
     async def before_cleanup_task(self):
         await self.bot.wait_until_ready()
 
+    def _get_eew_channel_id(self) -> int:
+        """從 config.json 獲取 EEW 地震速報頻道 ID (預設為 1227229429965656124)"""
+        try:
+            if os.path.exists('config.json'):
+                with open('config.json', 'r', encoding='utf-8') as f:
+                    bot_config = json.load(f)
+                    return int(bot_config.get("EEW_CHANNEL_ID", 1227229429965656124))
+        except Exception as e:
+            print(f"⚠️ [幹男防護] 讀取 EEW_CHANNEL_ID 失敗: {e}")
+        return 1227229429965656124
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        eew_channel_id = self._get_eew_channel_id()
+        now_ts = discord.utils.utcnow().timestamp()
+
+        #【EEW 地震速報連動觸發】：排除訊息編輯，僅於速報頻道發送新訊息時觸發暫停防禦 10 分鐘
+        if message.channel.id == eew_channel_id:
+            self.eew_pause_until = now_ts + 600.0  # 暫停防禦 10 分鐘 (600秒)
+            pause_time_str = datetime.datetime.fromtimestamp(self.eew_pause_until, tz=datetime.timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            log_msg = f"⚠️ [地震速報連動] 偵測到 EEW 頻道 ({eew_channel_id}) 發送新訊息！防禦機制已自動暫停 10 分鐘 (至 {pause_time_str})"
+            print(log_msg)
+
+            # 抄送至 Console / Output 通報頻道
+            try:
+                if os.path.exists('config.json'):
+                    with open('config.json', 'r', encoding='utf-8') as f:
+                        bot_config = json.load(f)
+                    console_id = bot_config.get("CONSOLE_ID")
+                    output_id = bot_config.get("OUTPUT_ID")
+                    target_channels = set()
+                    if console_id: target_channels.add(int(console_id))
+                    if output_id: target_channels.add(int(output_id))
+
+                    for cid in target_channels:
+                        ch = self.bot.get_channel(cid)
+                        if ch and ch.id != message.channel.id:
+                            embed = discord.Embed(
+                                title="🚨 [地震速報連動] EEW 發動",
+                                description=f"檢測到速報頻道 {message.channel.mention} 收到新地震通知！\n**防禦機制已自動暫停 10 分鐘**（將於 `{pause_time_str}` 恢復）。",
+                                color=discord.Color.yellow()
+                            )
+                            embed.set_footer(text="TWERG HoneyBot 連動防禦系統")
+                            await ch.send(embed=embed)
+            except Exception as e:
+                print(f"⚠️ [幹男防護] 發送 EEW 暫停防禦通報時發生錯誤: {e}")
+            return
+
+        # 若處於 EEW 地震 10 分鐘暫停防禦期間，直接跳過後續防禦檢測
+        if now_ts < self.eew_pause_until:
+            return
+
         # 忽略機器人、系統訊息與私訊
         if message.author.bot or message.guild is None or message.is_system():
             return
@@ -503,7 +554,7 @@ class FkfeboyCog(commands.Cog):
         raw_name = (getattr(message.author, 'nick', None) or getattr(message.author, 'global_name', None) or "")
         norm_name = self._normalize_text(raw_name)
 
-        # ⚡【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
+        #【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
         # 1. 剔除 Discord Mentions (使用者/身分組/頻道標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
         text_without_mentions = re.sub(r'<[@#][!&]?\d+>', '', raw_content).strip()
         norm_text_no_mentions = self._normalize_text(text_without_mentions)
@@ -584,7 +635,7 @@ class FkfeboyCog(commands.Cog):
                 if word not in nickname_excluded_words
             )
 
-        # 2. ⚡【組合式特徵正則比對】(結合實際攻擊截圖特徵)
+        # 2.【組合式特徵正則比對】(結合實際攻擊截圖特徵)
         regex_patterns = [
             # 組合A：展場/地點/家/宿舍 + 放炸彈/炸掉/💣 (Computex, 101世貿, 南港館, 女友家, 宿舍)
             r'(computex|101|世貿|南港|展場|展館|你家|女友家|學校|宿舍).*?(放|炸|💣|炸彈|爆破|綁)',
@@ -637,7 +688,7 @@ class FkfeboyCog(commands.Cog):
 
         has_bad_word = content_has_bad_word or name_has_bad_word or has_regex_match
 
-        # ⚡【精準擊殺規則 2】：發言或暱稱包含違規/恐嚇/正則特徵 -> 嘗試刪除訊息、直接 BAN 並發送頻道通報
+        #【精準擊殺規則 2】：發言或暱稱包含違規/恐嚇/正則特徵 -> 嘗試刪除訊息、直接 BAN 並發送頻道通報
         if has_bad_word:
             try:
                 await message.delete()
