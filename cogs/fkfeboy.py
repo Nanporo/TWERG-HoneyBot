@@ -504,8 +504,8 @@ class FkfeboyCog(commands.Cog):
         norm_name = self._normalize_text(raw_name)
 
         # ⚡【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
-        # 1. 剔除 Discord Mentions (使用者/身分組標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
-        text_without_mentions = re.sub(r'<[@#]&?!\d+>', '', raw_content).strip()
+        # 1. 剔除 Discord Mentions (使用者/身分組/頻道標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
+        text_without_mentions = re.sub(r'<[@#][!&]?\d+>', '', raw_content).strip()
         norm_text_no_mentions = self._normalize_text(text_without_mentions)
 
         # 2. 歷史發言處理 (保留近 60 秒發言紀錄)
@@ -520,11 +520,11 @@ class FkfeboyCog(commands.Cog):
             if norm_content and norm_content == past_norm:
                 exact_duplicate_count += 1
             # 剔除 @標記後的文字內容完全相同
-            elif norm_text_no_mentions and norm_text_no_mentions == self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw)):
+            elif norm_text_no_mentions and norm_text_no_mentions == self._normalize_text(re.sub(r'<[@#][!&]?\d+>', '', past_raw)):
                 similar_count += 1
             # 高度相似性比對：僅在非 Mention 文字長度 >= 8 字元時進行 (閥值提高至 90%)
             elif len(norm_text_no_mentions) >= 8:
-                past_no_mention = self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw))
+                past_no_mention = self._normalize_text(re.sub(r'<[@#][!&]?\d+>', '', past_raw))
                 if len(past_no_mention) >= 8:
                     ratio = difflib.SequenceMatcher(None, norm_text_no_mentions, past_no_mention).ratio()
                     if ratio >= 0.90:
