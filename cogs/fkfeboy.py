@@ -226,7 +226,8 @@ class FkfeboyCog(commands.Cog):
                 "死機掰", "貪破你娘", "死破狗", "管理狗", "欠插殺", "欠插", "支持炸群", "炸你們群",
                 "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "C8", "解鎖", "沒種", "狗啃",
                 "捅死", "pvp", "PVP", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
-                "ㄙㄌㄋ", "78毛", "78",
+                "ㄙㄌㄋ", "78毛", "屁眼", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
+                "fkass", "asshole", "fuckass", "btchmod",
 
                 # 3. 政治仇恨攻擊與侮辱性稱呼詞根
                 "藍白", "白藍", "藍狗", "白狗", "藍豬", "白豬", "小草", "草包", "雜草",
@@ -350,10 +351,12 @@ class FkfeboyCog(commands.Cog):
         now = discord.utils.utcnow()
         account_age_days = (now - message.author.created_at).days
         joined_at = getattr(message.author, 'joined_at', None)
-        join_age_days = (now - joined_at).days if joined_at else None
+        join_age_seconds = (now - joined_at).total_seconds() if joined_at else None
+        join_age_days = int(join_age_seconds // 86400) if join_age_seconds is not None else None
 
         is_new_account = account_age_days <= 180
         is_recent_join = join_age_days is not None and join_age_days <= 90
+        is_very_recent_join = join_age_seconds is not None and join_age_seconds <= 900  # 剛進伺服器 15 分鐘 (900 秒) 內
 
         # 讀取外部設定 (全域監控開關)
         settings = self.get_settings()
@@ -466,7 +469,8 @@ class FkfeboyCog(commands.Cog):
         raw_content = ((message.content or "") + " " + attachment_names).strip()
         norm_content = self._normalize_text(raw_content)
         
-        raw_name = getattr(message.author, 'display_name', '') or ""
+        # 僅比對用戶於伺服器設定的暱稱 (nick) 或全域顯示名稱 (global_name)，不比對 Discord 英文 ID/帳號句柄 (name)
+        raw_name = (getattr(message.author, 'nick', None) or getattr(message.author, 'global_name', None) or "")
         norm_name = self._normalize_text(raw_name)
 
         # ⚡【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
@@ -531,7 +535,24 @@ class FkfeboyCog(commands.Cog):
 
         # 1. 傳統與擴充關鍵字庫比對
         content_has_bad_word = any(word in raw_content or word in norm_content for word in bad_words)
-        name_has_bad_word = any(word in raw_name or word in norm_name for word in bad_words)
+        
+        # 暱稱比對嚴格化：排除容易造成誤 BAN 的通用/短詞 (如 pvp, 正解, 小草, 宿舍等)，僅比對高風險嚴重侮辱/恐嚇關鍵字
+        nickname_excluded_words = {
+            "pvp", "PVP", "c8", "C8", "小草", "白草", "藍草", "雜草", "草包", "藍白", "白藍", 
+            "柯粉", "蔥粉", "黃狗", "綠狗", "綠共", "塔綠班", "正解", "選我正解", "香檳", "開香檳", 
+            "預測", "預報", "預側", "COMPUTEX", "101世貿", "南港館", "宿舍", "屎", "解鎖", 
+            "沒種", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次", "三寶", "憨點", "憨包", 
+            "主機板", "鬼態度", "好好講", "好好跟你說", "殺小", "雙北毀", "大噴發", "巨震", "毀滅"
+        }
+        
+        name_has_bad_word = False
+        # 僅限定於剛進伺服器 15 分鐘 (is_very_recent_join) 內進行暱稱比對
+        if raw_name and is_very_recent_join:
+            name_has_bad_word = any(
+                (word in raw_name or word in norm_name)
+                for word in bad_words
+                if word not in nickname_excluded_words
+            )
 
         # 2. ⚡【組合式特徵正則比對】(結合實際攻擊截圖特徵)
         regex_patterns = [
@@ -556,7 +577,16 @@ class FkfeboyCog(commands.Cog):
 
             # 組合C：假地震恐嚇 (如 7.4/7.8/3主震 + 6小時/毀滅/噴發)
             r'(\d+\.\d+|\d+級|\d+主震).*?(小時|毀滅|噴發|巨震|預測|預報|正解|大地震)',
-            r'(雙北|台北|台灣|大屯|火山).*?(毀滅|噴發|大噴發|巨震)'
+            r'(雙北|台北|台灣|大屯|火山).*?(毀滅|噴發|大噴發|巨震)',
+
+            # 組合D：猥褻/性器官與騷擾詞彙 (如 屁眼/肛門/菊花/懶叫/關心...屁眼)
+            r'(屁眼|肛門|菊花|懶叫|陰莖|陰道)',
+            r'(關心|每天關心).*?(屁眼|肛門|菊花|器官|健康)',
+
+            # 組合E：英文侮辱詞根與惡意用戶名變形 (如 fkass, fuckass, btchmod, asshole)
+            r'(fk|fuck)(ass|btch|bitch|mod|er|ing)',
+            r'(asshole|fuckass|btchmod)',
+            r'\b(fuck|bitch|btch|asshole)\b'
         ]
 
         has_regex_match = any(
