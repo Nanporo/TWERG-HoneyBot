@@ -126,7 +126,7 @@ class FkfeboyCog(commands.Cog):
             return 1
 
     async def _send_kill_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
-        """當成功封鎖惡意用戶時，在觸發頻道與 CONSOLE 頻道發送通報 Embed"""
+        """當處決惡意用戶（禁言 3 天等待管理員處理）時，在觸發頻道與 CONSOLE 頻道發送通報 Embed"""
         embed = None
         try:
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容或暱稱觸發)*"
@@ -134,18 +134,18 @@ class FkfeboyCog(commands.Cog):
                 title="",
                 description=(
                     f"已匹配到惡意用戶 {author.mention} (`{author.name}`)\n"
-                    f"已執行封鎖並清除近期訊息。\n\n"
+                    f"已執行 **3 天禁言** 處置，等待管理員進行後續操作。\n\n"
                     f"**原因**：{reason_summary}。\n"
                     f"**原訊息內容**：\n{content_display}\n"
-                    f"請管理員再次檢查用戶紀錄，以免誤 BAN。"
+                    f"請管理員檢查用戶紀錄並進行後續處置。"
                 ),
                 color=discord.Color.red()
             )
             embed.set_thumbnail(url=author.display_avatar.url)
             embed.set_footer(text="TWERG HoneyBot 防護系統")
-            await channel.send(embed=embed, content="🚨 惡意用戶已驅逐")
+            await channel.send(embed=embed, content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）")
         except Exception as e:
-            print(f"⚠️ [幹男防護] 無法在頻道 {channel.id} 發送擊殺通報訊息: {e}")
+            print(f"⚠️ [幹男防護] 無法在頻道 {channel.id} 發送禁言通報訊息: {e}")
 
         # 同時抄送至 CONSOLE_ID 頻道
         if embed:
@@ -157,9 +157,9 @@ class FkfeboyCog(commands.Cog):
                     if console_id:
                         console_channel = self.bot.get_channel(int(console_id))
                         if console_channel and console_channel.id != channel.id:
-                            await console_channel.send(embed=embed, content="🚨 惡意用戶已驅逐")
+                            await console_channel.send(embed=embed, content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）")
             except Exception as ce:
-                print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送擊殺通報: {ce}")
+                print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
 
     async def _send_timeout_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
         """當自動處決禁言洗板用戶時，在觸發頻道與 CONSOLE 頻道發送 Embed 通報"""
@@ -239,9 +239,9 @@ class FkfeboyCog(commands.Cog):
             "bad_words": [
                 # 1. 傳統粗口、公然侮辱與威脅詞根
                 "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", "主機版", "電路板", "電路版", 
-                "操你媽", "幹你娘", "幹妳娘", "炸你", "死賤貨", "賤貨", "殺小", 
-                "雞巴", "機掰", "機八", "炸群", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
-                "死西八", "西八", "破麻", "綠茶婊", "妓女", "妓女之子", "混蛋狗", "混蛋", "排擠狗",
+                "操你媽", "炸你", "死賤貨", "賤貨", 
+                "雞巴", "機掰", "機八", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
+                "死西八", "西八", "破麻", "綠茶婊", "妓女", "混蛋", "排擠狗",
                 "拎北", "拎爸", "💣",
 
                 # 2. 人身攻擊、智力/身障侮辱、詛咒、威脅與騷擾詞根
@@ -249,8 +249,8 @@ class FkfeboyCog(commands.Cog):
                 "欠壓", "壓s", "欠幹", "欠操", "死全家", "全家死", "家也會被震垮", 
                 "震垮", "憨點", "憨包", "三寶", "s全家", "s人", "賴你媽逼", 
                 "死機掰", "貪破你娘", "死破狗", "管理狗", "欠插殺", "欠插", "支持炸群", "炸你們群",
-                "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "解鎖", "沒種", "狗啃",
-                "捅死", "pvp", "PVP", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
+                "你媽死", "媽死", "死人", "染疫", "nmsl", "c8", "解鎖", "沒種", "狗啃",
+                "捅死", "pvp", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
                 "ㄙㄌㄋ", "78毛", "屁眼", "屁股毛", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
                 "fkass", "asshole", "fuckass", "btchmod",
 
@@ -477,19 +477,19 @@ class FkfeboyCog(commands.Cog):
                 pass
 
             bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
-            if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
                 return
             
             try:
-                reason = "觸發幹婆你男娘防禦：新用戶前10筆訊息惡意標記保護對象"
-                await message.author.ban(reason=reason, delete_message_seconds=1800)
-                print(f"🚨 [幹男防護] 已 Ban 惡意用戶 {message.author} ({message.author.id}) - 理由: 前10筆訊息標記保護對象")
+                reason = "觸發幹婆你男娘防禦：新用戶前10筆訊息惡意標記保護對象（禁言3天等待管理員處置）"
+                await message.author.timeout(datetime.timedelta(days=3), reason=reason)
+                print(f"🚨 [幹男防護] 已禁言 3 天惡意用戶 {message.author} ({message.author.id}) - 理由: 前10筆訊息標記保護對象")
                 await self._send_kill_announcement(message.channel, message.author, "新用戶於前10筆訊息內惡意標記保護對象", raw_content=message.content)
             except discord.Forbidden:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
             except discord.HTTPException as e:
-                print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
+                print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
             return
 
         #【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
@@ -638,9 +638,9 @@ class FkfeboyCog(commands.Cog):
         
         # 暱稱比對嚴格化：排除容易造成誤 BAN 的通用/短詞 (如 pvp, 正解, 小草, 宿舍等)，僅比對高風險嚴重侮辱/恐嚇關鍵字
         nickname_excluded_words = {
-            "pvp", "PVP", "c8", "C8", "小草", "白草", "藍草", "雜草", "草包", "藍白", "白藍", 
+            "pvp", "c8", "小草", "白草", "藍草", "雜草", "草包", "藍白", "白藍", 
             "柯粉", "蔥粉", "黃狗", "綠狗", "綠共", "塔綠班", "正解", "選我正解", "香檳", "開香檳", 
-            "預測", "預報", "預側", "COMPUTEX", "101世貿", "南港館", "宿舍", "屎", "解鎖", 
+            "預測", "預報", "預側", "computex", "101世貿", "南港館", "宿舍", "屎", "解鎖", 
             "沒種", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次", "三寶", "憨點", "憨包", 
             "主機板", "鬼態度", "好好講", "好好跟你說", "殺小", "雙北毀", "大噴發", "巨震", "毀滅"
         }
@@ -715,69 +715,19 @@ class FkfeboyCog(commands.Cog):
                 pass
 
             bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
-            if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
                 return
             
             try:
-                reason = "觸發幹婆你男娘防禦：發布恐嚇言論、炸彈威脅、政治仇恨或不當暱稱"
-                await message.author.ban(reason=reason, delete_message_seconds=1800)
-                print(f"🚨 [幹男防護] 已 Ban 惡意用戶 {message.author} ({message.author.id}) - 理由: 命中攻擊關鍵字或正則特徵")
+                reason = "觸發幹婆你男娘防禦：發布恐嚇言論、炸彈威脅、政治仇恨或不當暱稱（禁言3天等待管理員處置）"
+                await message.author.timeout(datetime.timedelta(days=3), reason=reason)
+                print(f"🚨 [幹男防護] 已禁言 3 天惡意用戶 {message.author} ({message.author.id}) - 理由: 命中攻擊關鍵字或正則特徵")
                 await self._send_kill_announcement(message.channel, message.author, "發布恐嚇言論、炸彈威脅、政治仇恨或不當暱稱", raw_content=raw_content)
             except discord.Forbidden:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
             except discord.HTTPException as e:
-                print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
-
-    @app_commands.command(name="counts", description="查看目前的發言統計 (僅限管理員)")
-    @app_commands.default_permissions(administrator=True)
-    async def counts_command(self, interaction: discord.Interaction):
-        try:
-            with sqlite3.connect(self.db_file) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM message_counts WHERE count < 10")
-                pending_count = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM message_counts WHERE count >= 10")
-                completed_count = cursor.fetchone()[0]
-
-                # 優先抓出還在監控中 (count < 10) 的用戶，最多列出 30 筆
-                cursor.execute("SELECT user_id, count FROM message_counts WHERE count < 10 ORDER BY count DESC LIMIT 30")
-                pending_rows = cursor.fetchall()
-        except Exception as e:
-            await interaction.response.send_message(f"❌ 查詢資料庫時發生錯誤: {e}", ephemeral=True)
-            return
-
-        settings = self.get_settings()
-        global_monitor = settings.get("global_monitor", False)
-        status_str = "已開啟 🟢 (已包含潛水舊用戶)" if global_monitor else "已關閉 🔴 (僅限新帳號/新成員)"
-
-        summary_header = (
-            f"🛡️ **全域監控狀態**：{status_str}\n"
-            f"📊 **統計總覽**：監控中 (`<10`次)：**{pending_count}** 人 | 已畢業 (`>=10`次)：**{completed_count}** 人\n"
-            f"───────────────────────────"
-        )
-
-        lines = [summary_header]
-
-        if pending_rows:
-            lines.append("🔍 **目前監控中用戶 (未滿 10 次)**：")
-            for author_id, count in pending_rows:
-                try:
-                    created_ts = int(discord.utils.snowflake_time(int(author_id)).timestamp())
-                    created_str = f"<t:{created_ts}:d>"
-                except Exception:
-                    created_str = "未知"
-                lines.append(f"• <@{author_id}> ── 創建: {created_str} | 次數: **{count}/10**")
-        else:
-            lines.append("✅ 目前沒有任何未滿 10 次的監控中用戶。")
-
-        content = "\n".join(lines)
-        if len(content) > 4000:
-            content = content[:4000] + "\n... (訊息過長已截斷)"
-
-        embed = discord.Embed(title="📊 發言統計 (SQLite)", description=content, color=discord.Color.blue())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+                print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
 
 async def setup(bot):
     await bot.add_cog(FkfeboyCog(bot))
