@@ -43,7 +43,8 @@ bot = commands.Bot(
     command_prefix=(), 
     intents=intents, 
     owner_ids=owner_ids, 
-    help_command=None
+    help_command=None,
+    allowed_mentions=discord.AllowedMentions().none()
 )
 
 @bot.event
