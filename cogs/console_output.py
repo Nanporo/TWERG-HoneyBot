@@ -40,7 +40,7 @@ class ConsoleRedirector:
         self.original_stream.flush()
 
 class ConsoleOutputCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.buffer = []
         self.channel_id = None
@@ -75,13 +75,19 @@ class ConsoleOutputCog(commands.Cog):
 
     @tasks.loop(seconds=3)
     async def send_console_task(self):
+        await self.bot.wait_until_ready()
+                    
+        channel = self.bot.get_channel(int(self.channel_id))
+        bot_member = channel.guild.get_member(self.bot.user.id) or await channel.guild.fetch_member(self.bot.user.id)
+        if not channel.permissions_for(bot_member).send_messages:
+            self.original_stderr.write(f"\n❌ 權限不足！機器人無法在 Console 頻道 (ID: {self.channel_id}) 發送訊息。\n請至 Discord 伺服器檢查該頻道的「檢視頻道」與「發送訊息」權限。已自動暫停日誌轉發功能。\n")
+            self.send_console_task.cancel()
+            return
+        
         try:
             if not self.buffer:
                 return
                 
-            await self.bot.wait_until_ready()
-            
-            channel = self.bot.get_channel(int(self.channel_id))
             if not channel:
                 return
 

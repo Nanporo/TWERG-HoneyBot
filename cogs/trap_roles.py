@@ -63,6 +63,11 @@ class TrapRolesCog(commands.Cog):
         role = mentioned_trap_roles[0]
         reason = f"惡意標註陷阱身份組 (@{role.name})"
 
+        bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+        if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
+            print(f"⚠️ [TrapRoles] 機器人權限不足，無法封鎖用戶 {message.author}。")
+            return
+
         try:
             delete_seconds = 1800 if settings.get("delete_messages", True) else 0
             await message.author.ban(reason=reason, delete_message_seconds=delete_seconds)

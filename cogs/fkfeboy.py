@@ -9,7 +9,7 @@ import difflib
 import datetime
 
 class FkfeboyCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.settings_file = 'fkfeboy_settings.json'
         self.db_file = 'fkfeboy_counts.db'
@@ -211,20 +211,23 @@ class FkfeboyCog(commands.Cog):
                 675922096425009184, # Yoyo0901
                 277499904266338304, # YoWoApple
             ],
+
+            # 移除多餘的偵測或成員可能發出詞彙 by commandcat
+            # Use str.lower()
             "bad_words": [
                 # 1. 傳統粗口、公然侮辱與威脅詞根
                 "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", 
-                "操你媽", "幹你娘", "幹妳娘", "炸你", "死賤貨", "賤貨", "殺小", 
-                "雞巴", "機掰", "機八", "炸群", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
-                "死西八", "西八", "破麻", "綠茶婊", "妓女", "妓女之子", "混蛋狗", "混蛋", "排擠狗",
+                "操你媽", "炸你", "死賤貨", "賤貨", 
+                "雞巴", "機掰", "機八", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
+                "死西八", "西八", "破麻", "綠茶婊", "妓女", "混蛋", "排擠狗",
                 "拎北", "拎爸", "💣",
 
                 # 2. 人身攻擊、智力/身障侮辱、詛咒、威脅與騷擾詞根
-                "低能", "智障", "弱智", "腦殘", "腦癱", "賤畜", "破B", "破b", "死出來",
-                "欠壓", "壓S", "壓s", "欠幹", "欠操", "死全家", "全家死", "家也會被震垮", 
-                "震垮", "憨點", "憨包", "三寶", "S全家", "S人", "S人了", "賴你媽逼", 
+                "低能", "智障", "弱智", "腦殘", "腦癱", "賤畜", "破b", "死出來",
+                "欠壓", "壓s", "欠幹", "欠操", "死全家", "全家死", "家也會被震垮", 
+                "震垮", "憨點", "憨包", "三寶", "s全家", "s人", "賴你媽逼", 
                 "死機掰", "貪破你娘", "死破狗", "管理狗", "欠插殺", "欠插", "支持炸群", "炸你們群",
-                "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "C8", "解鎖", "沒種", "狗啃",
+                "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "解鎖", "沒種", "狗啃",
                 "捅死", "pvp", "PVP", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
                 "ㄙㄌㄋ", "78毛", "屁眼", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
                 "fkass", "asshole", "fuckass", "btchmod",
@@ -236,7 +239,7 @@ class FkfeboyCog(commands.Cog):
                 # 4. 假地震恐嚇、恐攻與場館威脅
                 "毀滅", "巨震", "大噴發", "預報", "預測", "預側", 
                 "雙北毀", "開香檳", "香檳", "靈氣強震", "3主震", "選我正解", "正解",
-                "COMPUTEX", "101世貿", "南港館", "綁起來", "炸掉", "賴先生", "恐龍", "暴龍",
+                "computex", "101世貿", "南港館", "綁起來", "炸掉", "賴先生", "恐龍", "暴龍",
                 "宿舍", "欠捅", "欠炸", "屎"
             ]
         }
@@ -264,13 +267,16 @@ class FkfeboyCog(commands.Cog):
         if "global_monitor" not in self._cached_settings:
             self._cached_settings["global_monitor"] = False
             updated = True
-        existing_bad_words = set(self._cached_settings.get("bad_words", []))
+
+        # set[str]
+        existing_bad_words = set(map(str, self._cached_settings.get("bad_words", [])))
         for bw in default_settings["bad_words"]:
             if bw not in existing_bad_words:
                 self._cached_settings.setdefault("bad_words", []).append(bw)
                 updated = True
 
-        existing_targets = set(self._cached_settings.get("target_users", []))
+        # set[int]
+        existing_targets = set(map(int, self._cached_settings.get("target_users", [])))
         for tu in default_settings["target_users"]:
             if tu not in existing_targets:
                 self._cached_settings.setdefault("target_users", []).append(tu)
@@ -290,7 +296,7 @@ class FkfeboyCog(commands.Cog):
     async def cleanup_task(self):
         """每日清理超過 90 天未再發言的歷史用戶紀錄"""
         now_ts = discord.utils.utcnow().timestamp()
-        ninety_days_sec = 90 * 24 * 60 * 60  # 90天的秒數
+        ninety_days_sec = 7776000  # 90天的秒數
         limit_ts = now_ts - ninety_days_sec
         try:
             with sqlite3.connect(self.db_file) as conn:
@@ -397,6 +403,11 @@ class FkfeboyCog(commands.Cog):
             except Exception:
                 pass
 
+            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+            if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+                return
+            
             try:
                 reason = "觸發幹婆你男娘防禦：新用戶前10筆訊息惡意標記保護對象"
                 await message.author.ban(reason=reason, delete_message_seconds=1800)
@@ -427,6 +438,10 @@ class FkfeboyCog(commands.Cog):
             except Exception:
                 pass
 
+            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
+                return
             try:
                 reason_text = "新用戶 60 秒內連續發送 5 則圖片/附件訊息洗板"
                 if isinstance(message.author, discord.Member):
@@ -452,6 +467,10 @@ class FkfeboyCog(commands.Cog):
             except Exception:
                 pass
 
+            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
+                return
             try:
                 reason_text = "新用戶發送訊息連續 3 則皆使用「#」大字體 Markdown 格式洗板"
                 if isinstance(message.author, discord.Member):
@@ -515,6 +534,10 @@ class FkfeboyCog(commands.Cog):
             except Exception:
                 pass
 
+            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
+                return
             try:
                 if exact_duplicate_count >= 3:
                     reason_text = "新用戶發送超過 3 次完全相同訊息洗板"
@@ -614,6 +637,11 @@ class FkfeboyCog(commands.Cog):
             except Exception:
                 pass
 
+            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+            if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
+                print(f"⚠️ [幹男防護] 機器人權限不足，無法 Ban 用戶 {message.author}")
+                return
+            
             try:
                 reason = "觸發幹婆你男娘防禦：發布恐嚇言論、炸彈威脅、政治仇恨或不當暱稱"
                 await message.author.ban(reason=reason, delete_message_seconds=1800)
