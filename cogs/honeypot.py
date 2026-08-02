@@ -70,6 +70,10 @@ class HoneypotCog(commands.Cog):
         except Exception as e:
             print(f"⚠️ [Honeypot] 無法在蜜罐頻道發送警告圖片與訊息: {e}")
 
+        bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
+        if not bot_member.guild_permissions.ban_members or bot_member.top_role <= message.author.top_role:
+            print(f"⚠️ [Honeypot] 機器人權限不足，無法封鎖用戶 {message.author}。請確保機器人權限且身份組層級高於該用戶。")
+            return
         try:
             delete_seconds = 1800 if settings.get("delete_messages", True) else 0
             await message.author.ban(reason="觸發蜜罐頻道防護機制", delete_message_seconds=delete_seconds)
