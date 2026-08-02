@@ -195,6 +195,26 @@ class FkfeboyCog(commands.Cog):
             except Exception as ce:
                 print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
 
+    def _get_explicit_mentions(self, message: discord.Message) -> list[discord.User]:
+        """
+        過濾並僅保留訊息中「主動手動標記」的用戶，排除因 Discord 「回覆訊息 (Reply)」自動帶入的 @提及。
+        """
+        if not message.mentions:
+            return []
+
+        # 若訊息不是「回覆訊息」(message.reference 為 None)，所有 mentions 皆視為手動 at
+        if message.reference is None:
+            return message.mentions
+
+        raw_content = message.content or ""
+        explicit_mentions = []
+        for user in message.mentions:
+            # 手動在訊息中輸入標記時，訊息內容會包含 <@ID> 或 <@!ID>
+            if f"<@{user.id}>" in raw_content or f"<@!{user.id}>" in raw_content:
+                explicit_mentions.append(user)
+
+        return explicit_mentions
+
     def get_settings(self):
         """
         讀取或初始化幹男防禦設定檔 (fkfeboy_settings.json)。
@@ -210,10 +230,11 @@ class FkfeboyCog(commands.Cog):
                 69370157784371200, 
                 675922096425009184, # Yoyo0901
                 277499904266338304, # YoWoApple
+                682208921921912863,
             ],
             "bad_words": [
                 # 1. 傳統粗口、公然侮辱與威脅詞根
-                "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", 
+                "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", "主機版", "電路板", "電路版", 
                 "操你媽", "幹你娘", "幹妳娘", "炸你", "死賤貨", "賤貨", "殺小", 
                 "雞巴", "機掰", "機八", "炸群", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
                 "死西八", "西八", "破麻", "綠茶婊", "妓女", "妓女之子", "混蛋狗", "混蛋", "排擠狗",
@@ -226,7 +247,7 @@ class FkfeboyCog(commands.Cog):
                 "死機掰", "貪破你娘", "死破狗", "管理狗", "欠插殺", "欠插", "支持炸群", "炸你們群",
                 "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "C8", "解鎖", "沒種", "狗啃",
                 "捅死", "pvp", "PVP", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
-                "ㄙㄌㄋ", "78毛", "屁眼", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
+                "ㄙㄌㄋ", "78毛", "屁眼", "屁股毛", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
                 "fkass", "asshole", "fuckass", "btchmod",
 
                 # 3. 政治仇恨攻擊與侮辱性稱呼詞根
@@ -388,7 +409,8 @@ class FkfeboyCog(commands.Cog):
         target_users = set(settings.get("target_users", []))
         bad_words = settings.get("bad_words", [])
 
-        mentioned_target_count = sum(1 for user in message.mentions if user.id in target_users)
+        explicit_mentions = self._get_explicit_mentions(message)
+        mentioned_target_count = sum(1 for user in explicit_mentions if user.id in target_users)
 
         # ⚡【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
         if mentioned_target_count >= 1:
@@ -439,24 +461,32 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準禁言規則 5】：新用戶連續 3 則訊息皆使用 "#" 放大標題 Markdown 格式洗板 -> 禁言 1 小時
+        # ⚡【精準禁言規則 5】：大字體洗板與組合騷擾打擊
         is_header_format = any(line.strip().startswith('#') for line in (message.content or "").splitlines())
         user_headers = self.user_header_history.get(author_id, [])
         user_headers.append(is_header_format)
         self.user_header_history[author_id] = user_headers
 
-        # 觸發條件：連續 3 則訊息均包含 "#" 大字體 Markdown 格式
-        if len(user_headers) >= 3 and all(user_headers[-3:]):
+        # 條件 1 (組合打擊)：前 2 則訊息內使用「#」大字體 ＋ 標記任何成員 (排除 Reply 自動提及)
+        is_early_header_mention = (new_count <= 2) and is_header_format and (len(explicit_mentions) > 0)
+        # 條件 2 (門檻縮短)：連續 2 則訊息均包含「#」大字體 Markdown 格式
+        is_consecutive_headers = len(user_headers) >= 2 and all(user_headers[-2:])
+
+        if is_early_header_mention or is_consecutive_headers:
             try:
                 await message.delete()
             except Exception:
                 pass
 
             try:
-                reason_text = "新用戶發送訊息連續 3 則皆使用「#」大字體 Markdown 格式洗板"
+                if is_early_header_mention:
+                    reason_text = "新用戶於前 2 則訊息使用「#」大字體並標記成員進行騷擾"
+                else:
+                    reason_text = "新用戶連續 2 則訊息皆使用「#」大字體 Markdown 格式洗板"
+
                 if isinstance(message.author, discord.Member):
                     await message.author.timeout(datetime.timedelta(hours=1), reason=f"觸發幹婆你男娘防禦：{reason_text}")
-                print(f"🚨 [幹男防護] 已禁言大字洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
+                print(f"🚨 [幹男防護] 已禁言大字騷擾/洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
                 await self._send_timeout_announcement(message.channel, message.author, reason_text, raw_content=message.content)
             except discord.Forbidden:
                 print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
