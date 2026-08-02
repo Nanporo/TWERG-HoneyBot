@@ -4,5 +4,6 @@
     11111111111111111
   ],
   "CONSOLE_ID": 333,
-  "HONEYPOT_ID": 444
+  "HONEYPOT_ID": 444,
+  "HEALTHCHECKS_URL": "https://hc-ping.com/your-uuid-here"
 }
