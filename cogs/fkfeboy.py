@@ -18,6 +18,7 @@ class FkfeboyCog(commands.Cog):
         self.user_msg_history = {}  # 近期用戶發言歷史記錄 {user_id: [(timestamp, norm_content, raw_content)]}
         self.user_img_history = {}  # 近期用戶圖片發言歷史記錄 {user_id: [timestamp, ...]}
         self.user_header_history = {}  # 近期用戶標題大字發言歷史記錄 {user_id: [is_header_bool, ...]}
+        self.eew_pause_until = 0.0  # 地震速報連動暫停截止時間戳 (UTC timestamp)
 
         # 初始化 SQLite 資料庫並進行自動移轉
         self._init_db()
@@ -195,6 +196,26 @@ class FkfeboyCog(commands.Cog):
             except Exception as ce:
                 print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
 
+    def _get_explicit_mentions(self, message: discord.Message) -> list[discord.User]:
+        """
+        過濾並僅保留訊息中「主動手動標記」的用戶，排除因 Discord 「回覆訊息 (Reply)」自動帶入的 @提及。
+        """
+        if not message.mentions:
+            return []
+
+        # 若訊息不是「回覆訊息」(message.reference 為 None)，所有 mentions 皆視為手動 at
+        if message.reference is None:
+            return message.mentions
+
+        raw_content = message.content or ""
+        explicit_mentions = []
+        for user in message.mentions:
+            # 手動在訊息中輸入標記時，訊息內容會包含 <@ID> 或 <@!ID>
+            if f"<@{user.id}>" in raw_content or f"<@!{user.id}>" in raw_content:
+                explicit_mentions.append(user)
+
+        return explicit_mentions
+
     def get_settings(self):
         """
         讀取或初始化幹男防禦設定檔 (fkfeboy_settings.json)。
@@ -210,16 +231,17 @@ class FkfeboyCog(commands.Cog):
                 69370157784371200, 
                 675922096425009184, # Yoyo0901
                 277499904266338304, # YoWoApple
+                682208921921912863,
             ],
 
             # 移除多餘的偵測或成員可能發出詞彙 by commandcat
             # Use str.lower()
             "bad_words": [
                 # 1. 傳統粗口、公然侮辱與威脅詞根
-                "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", 
-                "操你媽", "炸你", "死賤貨", "賤貨", 
-                "雞巴", "機掰", "機八", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
-                "死西八", "西八", "破麻", "綠茶婊", "妓女", "混蛋", "排擠狗",
+                "幹破", "幹爆", "放炸彈", "破狗", "破草", "王八蛋", "好好跟你說", "主機板", "主機版", "電路板", "電路版", 
+                "操你媽", "幹你娘", "幹妳娘", "炸你", "死賤貨", "賤貨", "殺小", 
+                "雞巴", "機掰", "機八", "炸群", "鬼態度", "好好講", "賤狗", "死狗", "走狗", "狗嘴",
+                "死西八", "西八", "破麻", "綠茶婊", "妓女", "妓女之子", "混蛋狗", "混蛋", "排擠狗",
                 "拎北", "拎爸", "💣",
 
                 # 2. 人身攻擊、智力/身障侮辱、詛咒、威脅與騷擾詞根
@@ -229,7 +251,7 @@ class FkfeboyCog(commands.Cog):
                 "死機掰", "貪破你娘", "死破狗", "管理狗", "欠插殺", "欠插", "支持炸群", "炸你們群",
                 "你媽死", "媽死", "死人", "染疫", "nmsl", "NMSL", "c8", "解鎖", "沒種", "狗啃",
                 "捅死", "pvp", "PVP", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
-                "ㄙㄌㄋ", "78毛", "屁眼", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
+                "ㄙㄌㄋ", "78毛", "屁眼", "屁股毛", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
                 "fkass", "asshole", "fuckass", "btchmod",
 
                 # 3. 政治仇恨攻擊與侮辱性稱呼詞根
@@ -310,8 +332,58 @@ class FkfeboyCog(commands.Cog):
     async def before_cleanup_task(self):
         await self.bot.wait_until_ready()
 
+    def _get_eew_channel_id(self) -> int:
+        """從 config.json 獲取 EEW 地震速報頻道 ID (預設為 1227229429965656124)"""
+        try:
+            if os.path.exists('config.json'):
+                with open('config.json', 'r', encoding='utf-8') as f:
+                    bot_config = json.load(f)
+                    return int(bot_config.get("EEW_CHANNEL_ID", 1227229429965656124))
+        except Exception as e:
+            print(f"⚠️ [幹男防護] 讀取 EEW_CHANNEL_ID 失敗: {e}")
+        return 1227229429965656124
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        eew_channel_id = self._get_eew_channel_id()
+        now_ts = discord.utils.utcnow().timestamp()
+
+        #【EEW 地震速報連動觸發】：排除訊息編輯，僅於速報頻道發送新訊息時觸發暫停防禦 10 分鐘
+        if message.channel.id == eew_channel_id:
+            self.eew_pause_until = now_ts + 600.0  # 暫停防禦 10 分鐘 (600秒)
+            pause_time_str = datetime.datetime.fromtimestamp(self.eew_pause_until, tz=datetime.timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M:%S')
+            log_msg = f"⚠️ [地震速報連動] 偵測到 EEW 頻道 ({eew_channel_id}) 發送新訊息！防禦機制已自動暫停 10 分鐘 (至 {pause_time_str})"
+            print(log_msg)
+
+            # 抄送至 Console / Output 通報頻道
+            try:
+                if os.path.exists('config.json'):
+                    with open('config.json', 'r', encoding='utf-8') as f:
+                        bot_config = json.load(f)
+                    console_id = bot_config.get("CONSOLE_ID")
+                    output_id = bot_config.get("OUTPUT_ID")
+                    target_channels = set()
+                    if console_id: target_channels.add(int(console_id))
+                    if output_id: target_channels.add(int(output_id))
+
+                    for cid in target_channels:
+                        ch = self.bot.get_channel(cid)
+                        if ch and ch.id != message.channel.id:
+                            embed = discord.Embed(
+                                title="🚨 [地震速報連動] EEW 發動",
+                                description=f"檢測到速報頻道 {message.channel.mention} 收到新地震通知！\n**防禦機制已自動暫停 10 分鐘**（將於 `{pause_time_str}` 恢復）。",
+                                color=discord.Color.yellow()
+                            )
+                            embed.set_footer(text="TWERG HoneyBot 連動防禦系統")
+                            await ch.send(embed=embed)
+            except Exception as e:
+                print(f"⚠️ [幹男防護] 發送 EEW 暫停防禦通報時發生錯誤: {e}")
+            return
+
+        # 若處於 EEW 地震 10 分鐘暫停防禦期間，直接跳過後續防禦檢測
+        if now_ts < self.eew_pause_until:
+            return
+
         # 忽略機器人、系統訊息與私訊
         if message.author.bot or message.guild is None or message.is_system():
             return
@@ -394,9 +466,10 @@ class FkfeboyCog(commands.Cog):
         target_users = set(settings.get("target_users", []))
         bad_words = settings.get("bad_words", [])
 
-        mentioned_target_count = sum(1 for user in message.mentions if user.id in target_users)
+        explicit_mentions = self._get_explicit_mentions(message)
+        mentioned_target_count = sum(1 for user in explicit_mentions if user.id in target_users)
 
-        # ⚡【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
+        #【精準擊殺規則 1】：新用戶前 10 筆訊息內，只要標記任何保護對象 (管理員/VIP) -> 先刪除訊息再 BAN
         if mentioned_target_count >= 1:
             try:
                 await message.delete()
@@ -419,7 +492,7 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] Ban 用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
+        #【精準禁言規則 3】：新用戶短時間 (60秒) 內連續發送 5 則包含圖片/附件的訊息 -> 禁言 1 小時
         has_attachments = len(message.attachments) > 0
         now_ts = discord.utils.utcnow().timestamp()
 
@@ -454,28 +527,32 @@ class FkfeboyCog(commands.Cog):
                 print(f"⚠️ [幹男防護] 禁言用戶時發生錯誤: {e}")
             return
 
-        # ⚡【精準禁言規則 5】：新用戶連續 3 則訊息皆使用 "#" 放大標題 Markdown 格式洗板 -> 禁言 1 小時
+        #【精準禁言規則 5】：大字體洗板與組合騷擾打擊
         is_header_format = any(line.strip().startswith('#') for line in (message.content or "").splitlines())
         user_headers = self.user_header_history.get(author_id, [])
         user_headers.append(is_header_format)
         self.user_header_history[author_id] = user_headers
 
-        # 觸發條件：連續 3 則訊息均包含 "#" 大字體 Markdown 格式
-        if len(user_headers) >= 3 and all(user_headers[-3:]):
+        # 條件 1 (組合打擊)：前 2 則訊息內使用「#」大字體 ＋ 標記任何成員 (排除 Reply 自動提及)
+        is_early_header_mention = (new_count <= 2) and is_header_format and (len(explicit_mentions) > 0)
+        # 條件 2 (門檻縮短)：連續 2 則訊息均包含「#」大字體 Markdown 格式
+        is_consecutive_headers = len(user_headers) >= 2 and all(user_headers[-2:])
+
+        if is_early_header_mention or is_consecutive_headers:
             try:
                 await message.delete()
             except Exception:
                 pass
 
-            bot_member = message.guild.get_member(self.bot.user.id) or await message.guild.fetch_member(self.bot.user.id)
-            if not bot_member.guild_permissions.moderate_members or bot_member.top_role <= message.author.top_role:
-                print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
-                return
             try:
-                reason_text = "新用戶發送訊息連續 3 則皆使用「#」大字體 Markdown 格式洗板"
+                if is_early_header_mention:
+                    reason_text = "新用戶於前 2 則訊息使用「#」大字體並標記成員進行騷擾"
+                else:
+                    reason_text = "新用戶連續 2 則訊息皆使用「#」大字體 Markdown 格式洗板"
+
                 if isinstance(message.author, discord.Member):
                     await message.author.timeout(datetime.timedelta(hours=1), reason=f"觸發幹婆你男娘防禦：{reason_text}")
-                print(f"🚨 [幹男防護] 已禁言大字洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
+                print(f"🚨 [幹男防護] 已禁言大字騷擾/洗板用戶 {message.author} ({message.author.id}) 1小時 - 理由: {reason_text}")
                 await self._send_timeout_announcement(message.channel, message.author, reason_text, raw_content=message.content)
             except discord.Forbidden:
                 print(f"⚠️ [幹男防護] 機器人權限不足，無法禁言用戶 {message.author}")
@@ -492,9 +569,9 @@ class FkfeboyCog(commands.Cog):
         raw_name = (getattr(message.author, 'nick', None) or getattr(message.author, 'global_name', None) or "")
         norm_name = self._normalize_text(raw_name)
 
-        # ⚡【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
-        # 1. 剔除 Discord Mentions (使用者/身分組標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
-        text_without_mentions = re.sub(r'<[@#]&?!\d+>', '', raw_content).strip()
+        #【精準擊殺規則 4】：新用戶重複或高度相似訊息洗板禁言邏輯 (已排除 @標記影響與短句誤判)
+        # 1. 剔除 Discord Mentions (使用者/身分組/頻道標記)，只留純文字比對，防止連 Ping 或變更標記被誤判
+        text_without_mentions = re.sub(r'<[@#][!&]?\d+>', '', raw_content).strip()
         norm_text_no_mentions = self._normalize_text(text_without_mentions)
 
         # 2. 歷史發言處理 (保留近 60 秒發言紀錄)
@@ -509,11 +586,11 @@ class FkfeboyCog(commands.Cog):
             if norm_content and norm_content == past_norm:
                 exact_duplicate_count += 1
             # 剔除 @標記後的文字內容完全相同
-            elif norm_text_no_mentions and norm_text_no_mentions == self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw)):
+            elif norm_text_no_mentions and norm_text_no_mentions == self._normalize_text(re.sub(r'<[@#][!&]?\d+>', '', past_raw)):
                 similar_count += 1
             # 高度相似性比對：僅在非 Mention 文字長度 >= 8 字元時進行 (閥值提高至 90%)
             elif len(norm_text_no_mentions) >= 8:
-                past_no_mention = self._normalize_text(re.sub(r'<[@#]&?!\d+>', '', past_raw))
+                past_no_mention = self._normalize_text(re.sub(r'<[@#][!&]?\d+>', '', past_raw))
                 if len(past_no_mention) >= 8:
                     ratio = difflib.SequenceMatcher(None, norm_text_no_mentions, past_no_mention).ratio()
                     if ratio >= 0.90:
@@ -577,7 +654,7 @@ class FkfeboyCog(commands.Cog):
                 if word not in nickname_excluded_words
             )
 
-        # 2. ⚡【組合式特徵正則比對】(結合實際攻擊截圖特徵)
+        # 2.【組合式特徵正則比對】(結合實際攻擊截圖特徵)
         regex_patterns = [
             # 組合A：展場/地點/家/宿舍 + 放炸彈/炸掉/💣 (Computex, 101世貿, 南港館, 女友家, 宿舍)
             r'(computex|101|世貿|南港|展場|展館|你家|女友家|學校|宿舍).*?(放|炸|💣|炸彈|爆破|綁)',
@@ -630,7 +707,7 @@ class FkfeboyCog(commands.Cog):
 
         has_bad_word = content_has_bad_word or name_has_bad_word or has_regex_match
 
-        # ⚡【精準擊殺規則 2】：發言或暱稱包含違規/恐嚇/正則特徵 -> 嘗試刪除訊息、直接 BAN 並發送頻道通報
+        #【精準擊殺規則 2】：發言或暱稱包含違規/恐嚇/正則特徵 -> 嘗試刪除訊息、直接 BAN 並發送頻道通報
         if has_bad_word:
             try:
                 await message.delete()
