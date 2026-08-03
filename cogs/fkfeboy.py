@@ -8,6 +8,123 @@ import re
 import difflib
 import datetime
 
+class AdminActionView(discord.ui.View):
+    """供管理員快速處置處決/洗板用戶的按鈕 UI 視圖 (限定管理員權限操作)"""
+    def __init__(self, target_user: discord.User | discord.Member, timeout: float = 86400):
+        super().__init__(timeout=timeout)
+        self.target_user = target_user
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("❌ 無法在此處驗證管理員權限。", ephemeral=True)
+            return False
+
+        # 判斷點擊按鈕的用戶是否正在被禁言 (timed out)
+        is_muted = False
+        try:
+            is_muted = interaction.user.is_timed_out()
+        except Exception:
+            if getattr(interaction.user, "timed_out_until", None):
+                is_muted = interaction.user.timed_out_until > discord.utils.utcnow()
+
+        if is_muted:
+            await interaction.response.send_message("❌ 你正在被禁言，不要想進行操作！", ephemeral=True)
+            return False
+
+        # 限定只有管理員權限 (Administrator) 或擁有封鎖成員權限 (Ban Members) 的 Mod 才能點擊操作按鈕
+        perms = interaction.user.guild_permissions
+        if not (perms.administrator or perms.ban_members):
+            await interaction.response.send_message("❌ 你必須擁有伺服器管理員或封鎖成員權限才能執行此操作！", ephemeral=True)
+            return False
+
+        return True
+
+    @discord.ui.button(label="停權（全域）", style=discord.ButtonStyle.danger, emoji="🔨")
+    async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            bot_member = interaction.guild.get_member(interaction.client.user.id) or await interaction.guild.fetch_member(interaction.client.user.id)
+            if not bot_member.guild_permissions.ban_members:
+                await interaction.response.send_message("⚠️ 機器人缺少「封鎖成員」權限，無法執行停權。", ephemeral=True)
+                return
+
+            await interaction.guild.ban(
+                discord.Object(id=self.target_user.id),
+                reason=f"管理員 {interaction.user} ({interaction.user.id}) 按鈕操作：停權（全域）",
+                delete_message_seconds=0
+            )
+
+            for item in self.children:
+                item.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(
+                f"🔨 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **停權（全域封鎖）**。"
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message("⚠️ 機器人權限不足或對象層級高於機器人，無法執行停權。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ 執行停權時發生錯誤: {e}", ephemeral=True)
+
+    @discord.ui.button(label="踢出", style=discord.ButtonStyle.secondary)
+    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            bot_member = interaction.guild.get_member(interaction.client.user.id) or await interaction.guild.fetch_member(interaction.client.user.id)
+            if not bot_member.guild_permissions.kick_members:
+                await interaction.response.send_message("⚠️ 機器人缺少「踢出成員」權限，無法執行踢出。", ephemeral=True)
+                return
+
+            member = interaction.guild.get_member(self.target_user.id)
+            if not member:
+                try:
+                    member = await interaction.guild.fetch_member(self.target_user.id)
+                except discord.NotFound:
+                    member = None
+
+            if member:
+                await member.kick(reason=f"管理員 {interaction.user} ({interaction.user.id}) 按鈕操作：踢出伺服器")
+                for item in self.children:
+                    item.disabled = True
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send(
+                    f"👢 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **踢出伺服器**。"
+                )
+            else:
+                await interaction.response.send_message(f"⚠️ 用戶 `{self.target_user.name}` 已不在伺服器中。", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("⚠️ 機器人權限不足或對象層級高於機器人，無法執行踢出。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ 執行踢出時發生錯誤: {e}", ephemeral=True)
+
+    @discord.ui.button(label="解除禁言", style=discord.ButtonStyle.success, emoji="🔓")
+    async def untimeout_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            bot_member = interaction.guild.get_member(interaction.client.user.id) or await interaction.guild.fetch_member(interaction.client.user.id)
+            if not bot_member.guild_permissions.moderate_members:
+                await interaction.response.send_message("⚠️ 機器人缺少「停權成員 (Timeout)」權限，無法解除禁言。", ephemeral=True)
+                return
+
+            member = interaction.guild.get_member(self.target_user.id)
+            if not member:
+                try:
+                    member = await interaction.guild.fetch_member(self.target_user.id)
+                except discord.NotFound:
+                    member = None
+
+            if member:
+                await member.timeout(None, reason=f"管理員 {interaction.user} ({interaction.user.id}) 按鈕操作：解除禁言")
+                for item in self.children:
+                    item.disabled = True
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send(
+                    f"🔓 已由管理員 {interaction.user.mention} 成功解除用戶 {self.target_user.mention} (`{self.target_user.name}`) 的禁言狀態。"
+                )
+            else:
+                await interaction.response.send_message(f"⚠️ 用戶 `{self.target_user.name}` 已不在伺服器中。", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("⚠️ 機器人權限不足或對象層級高於機器人，無法解除禁言。", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ 執行解除禁言時發生錯誤: {e}", ephemeral=True)
+
+
 class FkfeboyCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -126,7 +243,7 @@ class FkfeboyCog(commands.Cog):
             return 1
 
     async def _send_kill_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
-        """當處決惡意用戶（禁言 3 天等待管理員處理）時，在觸發頻道與 CONSOLE 頻道發送通報 Embed"""
+        """當處決惡意用戶（禁言 3 天等待管理員處理）時，在觸發頻道與 CONSOLE 頻道發送通報 Embed 包含管理員快捷按鈕"""
         embed = None
         try:
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容或暱稱觸發)*"
@@ -143,7 +260,11 @@ class FkfeboyCog(commands.Cog):
             )
             embed.set_thumbnail(url=author.display_avatar.url)
             embed.set_footer(text="TWERG HoneyBot 防護系統")
-            await channel.send(embed=embed, content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）")
+            await channel.send(
+                content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）",
+                embed=embed,
+                view=AdminActionView(author)
+            )
         except Exception as e:
             print(f"⚠️ [幹男防護] 無法在頻道 {channel.id} 發送禁言通報訊息: {e}")
 
@@ -157,12 +278,16 @@ class FkfeboyCog(commands.Cog):
                     if console_id:
                         console_channel = self.bot.get_channel(int(console_id))
                         if console_channel and console_channel.id != channel.id:
-                            await console_channel.send(embed=embed, content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）")
+                            await console_channel.send(
+                                content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）",
+                                embed=embed,
+                                view=AdminActionView(author)
+                            )
             except Exception as ce:
                 print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
 
     async def _send_timeout_announcement(self, channel: discord.TextChannel, author: discord.User, reason_summary: str, raw_content: str = None):
-        """當自動處決禁言洗板用戶時，在觸發頻道與 CONSOLE 頻道發送 Embed 通報"""
+        """當自動處決禁言洗板用戶時，在觸發頻道與 CONSOLE 頻道發送 Embed 通報包含管理員快捷按鈕"""
         embed = None
         try:
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容)*"
@@ -178,7 +303,11 @@ class FkfeboyCog(commands.Cog):
             )
             embed.set_thumbnail(url=author.display_avatar.url)
             embed.set_footer(text="TWERG HoneyBot 防護系統")
-            await channel.send(embed=embed, content="🚨 新用戶重複洗板已自動禁言")
+            await channel.send(
+                content="🚨 新用戶重複洗板已自動禁言",
+                embed=embed,
+                view=AdminActionView(author)
+            )
         except Exception as e:
             print(f"⚠️ [幹男防護] 無法發送禁言通報訊息: {e}")
 
@@ -192,7 +321,11 @@ class FkfeboyCog(commands.Cog):
                     if console_id:
                         console_channel = self.bot.get_channel(int(console_id))
                         if console_channel and console_channel.id != channel.id:
-                            await console_channel.send(embed=embed, content="🚨 新用戶重複洗板已自動禁言")
+                            await console_channel.send(
+                                content="🚨 新用戶重複洗板已自動禁言",
+                                embed=embed,
+                                view=AdminActionView(author)
+                            )
             except Exception as ce:
                 print(f"⚠️ [幹男防護] 無法在 CONSOLE 頻道發送禁言通報: {ce}")
 
@@ -226,6 +359,7 @@ class FkfeboyCog(commands.Cog):
             "target_users": [
                 964849855396741130,
                 1356782484565790840, # 台灣 Online 管理員 / 頑固苗獨份子
+                1094624743149281364, # 保護對象 / 管理員
                 782499307717656596, 
                 815574915901554699, # ExpTech 管理員 / eggrollpvp
                 69370157784371200, 
@@ -252,7 +386,8 @@ class FkfeboyCog(commands.Cog):
                 "你媽死", "媽死", "死人", "染疫", "nmsl", "c8", "解鎖", "沒種", "狗啃",
                 "捅死", "pvp", "死腦筋", "噴人", "瞎掰", "躲封鎖", "躲封", "炸一次", "鎖一次",
                 "ㄙㄌㄋ", "78毛", "屁眼", "屁股毛", "肛門", "菊花", "陰莖", "陰道", "懶叫", "公然騷擾",
-                "fkass", "asshole", "fuckass", "btchmod",
+                "fkass", "asshole", "fuckass", "btchmod", "噴糞", "大便", "吃屎", "吃大便", "會員制餐廳",
+                "德川家康", "野獸先輩", "食糞", "喰糞", "吐糞", "114514", "1919810", "渴望鮮血", "真夏夜",
 
                 # 3. 政治仇恨攻擊與侮辱性稱呼詞根
                 "藍白", "白藍", "藍狗", "白狗", "藍豬", "白豬", "小草", "草包", "雜草",
@@ -686,7 +821,12 @@ class FkfeboyCog(commands.Cog):
             # 組合E：英文侮辱詞根與惡意用戶名變形 (如 fkass, fuckass, btchmod, asshole)
             r'(fk|fuck)(ass|btch|bitch|mod|er|ing)',
             r'(asshole|fuckass|btchmod)',
-            r'\b(fuck|bitch|btch|asshole)\b'
+            r'\b(fuck|bitch|btch|asshole)\b',
+
+            # 組合F：糞尿攻擊與會員制餐廳/淫夢梗騷擾用語 (如 滿嘴噴糞, 吃大便, 吃屎, 會員制餐廳, 德川家康, 野獸先輩, 114514)
+            r'(滿嘴|噴|吐)(糞|屎)',
+            r'(吃|食|喰)(屎|大便|糞)',
+            r'(會員制|會員制餐廳|德川家康|野獸先輩|114514|1919810|真夏夜|渴望鮮血)'
         ]
 
         has_regex_match = any(
