@@ -70,7 +70,7 @@ class SettingsView(discord.ui.View):
         # 2. 關閉按鈕 (Row 2)
         self.close_btn = discord.ui.Button(
             label="關閉設定",
-            style=discord.ButtonStyle.danger,
+            style=discord.ButtonStyle.secondary,
             emoji="❌",
             row=2
         )
