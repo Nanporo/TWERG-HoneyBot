@@ -3,38 +3,11 @@ from discord.ext import commands
 import json
 import os
 
-def load_server_authorizations() -> dict:
-    auth_file = 'server_authorizations.json'
-    if not os.path.exists(auth_file):
-        return {}
-    try:
-        with open(auth_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-def save_server_authorizations(data: dict):
-    auth_file = 'server_authorizations.json'
-    try:
-        with open(auth_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"⚠️ [ServerCheck] 儲存 server_authorizations.json 失敗: {e}")
-
-def is_server_authorized(guild_id: int) -> bool:
-    try:
-        with open('config.json', 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        twerg_id = config.get("TWERG_SERVER_ID") or config.get("SERVER_ID", 518699949500661760)
-        if twerg_id and int(guild_id) == int(twerg_id):
-            return True
-    except Exception:
-        pass
-
-    auths = load_server_authorizations()
-    g_info = auths.get(str(guild_id), {})
-    return g_info.get("authorized", False)
+from settings.settings_utils import (
+    load_server_authorizations,
+    save_server_authorizations,
+    is_server_authorized
+)
 
 class ServerCheck(commands.Cog):
     def __init__(self, bot):

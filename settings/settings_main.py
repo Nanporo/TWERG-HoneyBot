@@ -1,12 +1,11 @@
 import discord
 from settings.settings_utils import (
-    load_honeypot_settings,
-    load_ryker_settings,
+    load_guild_settings,
     load_config,
     is_server_authorized
 )
 from settings.settings_roles import RoleSettingsView
-from settings.settings_ryker import RykerSettingsView
+from settings.settings_bad_users import BadUsersSettingsView
 from settings.settings_log import LogSettingsView
 from settings.settings_honeypot import HoneypotSettingsView
 
@@ -18,11 +17,9 @@ class SettingsView(discord.ui.View):
         self.guild_id_str = str(guild_id)
         self.message = None
 
-        self.hp_all_settings = load_honeypot_settings()
-        self.hp_settings = self.hp_all_settings.get(self.guild_id_str, {})
-        
-        self.ryker_all_settings = load_ryker_settings()
-        self.ryker_settings = self.ryker_all_settings.get(self.guild_id_str, {})
+        self.guild_settings = load_guild_settings(self.guild_id)
+        self.hp_settings = self.guild_settings
+        self.ryker_settings = self.guild_settings
 
         self.config = load_config()
         self.twerg_id = int(self.config.get("TWERG_SERVER_ID") or self.config.get("SERVER_ID", 518699949500661760))
@@ -36,8 +33,8 @@ class SettingsView(discord.ui.View):
         # 1. 模組選擇下拉選單 (Row 0)
         options = [
             discord.SelectOption(label="白名單與身份組", value="roles", description="設定排除防護白名單與提及即封鎖的陷阱身份組", emoji="🛡️"),
-            discord.SelectOption(label="Ryker 惡意帳號與門檻", value="ryker", description="設定發言監控門檻、潛水監控、聯防與 EEW 暫停", emoji="🚨"),
-            discord.SelectOption(label="本伺服器防護日誌", value="log", description="設定本伺服器獨立處決與聯防日誌頻道", emoji="📡"),
+            discord.SelectOption(label="惡意帳號與門檻", value="ryker", description="設定發言監控門檻、潛水監控、聯防與 EEW 暫停", emoji="🚨"),
+            discord.SelectOption(label="伺服器防護日誌", value="log", description="設定本伺服器獨立處決與聯防日誌頻道", emoji="📡"),
             discord.SelectOption(label="蜜罐頻道防護", value="honeypot", description="查看蜜罐無聲誘捕與處決頻道狀態", emoji="🍯")
         ]
 
@@ -107,10 +104,10 @@ class SettingsView(discord.ui.View):
             honeypot_status = "`🚫` TWERG 專屬"
 
         embed.add_field(name="🛡️ 白名單與身份組", value=roles_status, inline=True)
-        embed.add_field(name="🚨 Ryker 惡意帳號防護", value=ryker_status, inline=False)
-        embed.add_field(name="📡 本伺服器防護日誌", value=log_status, inline=True)
+        embed.add_field(name="🚨 惡意帳號防護", value=ryker_status, inline=False)
+        embed.add_field(name="📡 伺服器防護日誌", value=log_status, inline=True)
         embed.add_field(name="🍯 蜜罐頻道防護", value=honeypot_status, inline=True)
-        embed.set_footer(text="HoneyBot 蜜罐與惡意帳號雙重防護系統 v2.0")
+        embed.set_footer(text="TWERG HoneyBot 防護系統")
 
         return "🛡️ **HoneyBot 防護與系統設定面板**", embed
 
@@ -120,7 +117,7 @@ class SettingsView(discord.ui.View):
             view = RoleSettingsView(self.bot, self.guild_id)
             await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
         elif val == "ryker":
-            view = RykerSettingsView(self.bot, self.guild_id)
+            view = BadUsersSettingsView(self.bot, self.guild_id)
             await interaction.response.edit_message(embed=view.build_embed(), view=view)
         elif val == "log":
             view = LogSettingsView(self.bot, self.guild_id)

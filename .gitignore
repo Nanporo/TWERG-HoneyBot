@@ -195,3 +195,20 @@ ryker_settings.json
 server_authorizations.json
 trusted_users.json
 
+# SQLite 資料庫 (自動生成，含伺服器/用戶資料，不應納入版控)
+guild_settings.db
+guild_settings.db-shm
+guild_settings.db-wal
+server_authorizations.db
+server_authorizations.db-shm
+server_authorizations.db-wal
+ryker_badusers.db
+ryker_badusers.db-shm
+ryker_badusers.db-wal
+counts.db
+counts.db-shm
+counts.db-wal
+counts_archive.db
+counts_archive.db-shm
+counts_archive.db-wal
+

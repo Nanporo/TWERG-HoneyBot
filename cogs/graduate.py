@@ -6,22 +6,17 @@ import json
 import os
 from cogs.server_check import is_server_authorized
 
+from settings.settings_utils import load_guild_settings
+
 class GraduateCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db_counts = 'ryker_counts.db'
-        self.db_archive = 'ryker_archive.db'
-        self.settings_file = 'ryker_settings.json'
+        self.db_counts = 'counts.db'
+        self.db_archive = 'counts_archive.db'
 
     def get_threshold(self, guild_id: int) -> int:
-        if not os.path.exists(self.settings_file):
-            return 10
-        try:
-            with open(self.settings_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get(str(guild_id), {}).get("monitor_threshold", 10)
-        except Exception:
-            return 10
+        settings = load_guild_settings(guild_id)
+        return settings.get("monitor_threshold", 10)
 
     def _get_user_count(self, guild_id: int, user_id: str) -> int:
         gid_str = str(guild_id)
@@ -69,7 +64,7 @@ class GraduateCog(commands.Cog):
             print(f"⚠️ [手動畢業] 手動畢業用戶至歸檔資料庫失敗: {e}")
             return False
 
-    @app_commands.command(name="手動畢業", description="手動將發言未達門檻的用戶標記為已畢業 (僅限管理員)")
+    @app_commands.command(name="手動畢業", description="[管理員] 手動將發言未達門檻的用戶標記為已畢業")
     @app_commands.describe(user="要手動畢業的用戶")
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)

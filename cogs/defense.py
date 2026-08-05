@@ -27,24 +27,14 @@ from defense_modules.defense_image_spam import check_image_spam
 from defense_modules.defense_header_spam import check_header_spam
 from defense_modules.defense_bad_words import check_bad_words
 
+from settings.settings_utils import load_all_guild_settings, load_guild_settings, save_guild_settings
+
 def get_ryker_settings() -> dict:
-    settings_file = 'ryker_settings.json'
-    if not os.path.exists(settings_file):
-        return {}
-    try:
-        with open(settings_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return load_all_guild_settings()
 
 def save_ryker_settings(data: dict):
-    settings_file = 'ryker_settings.json'
-    try:
-        with open(settings_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"⚠️ [幹男防護] 儲存 ryker_settings.json 失敗: {e}")
+    for k, v in data.items():
+        save_guild_settings(int(k), v)
 
 class RykerAdminActionView(discord.ui.View):
     """供管理員快速處置處決/洗板用戶的按鈕 UI 視圖"""
@@ -123,7 +113,7 @@ class RykerAdminActionView(discord.ui.View):
                         b_member = g.get_member(interaction.client.user.id)
                         if b_member and b_member.guild_permissions.ban_members:
                             try:
-                                await g.ban(discord.Object(id=self.target_user.id), reason=f"Ryker 跨伺服器聯防封鎖 (源自伺服器 {interaction.guild.name})")
+                                await g.ban(discord.Object(id=self.target_user.id), reason=f"跨伺服器聯防封鎖 (源自伺服器 {interaction.guild.name})")
                                 banned_guilds.append(g.name)
                                 print(f"🤝 [幹男防護 - 聯防同步BAN] 目標伺服器: {g.name} ({g.id}) | 源自伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 被操作人: {self.target_user} ({self.target_user.id})")
                                 
@@ -166,7 +156,7 @@ class RykerAdminActionView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"⚠️ 執行停權時發生錯誤: {e}", ephemeral=True)
 
-    @discord.ui.button(label="踢出", style=discord.ButtonStyle.secondary, emoji="👢")
+    @discord.ui.button(label="踢出", style=discord.ButtonStyle.secondary, emoji="👋")
     async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             bot_member = interaction.guild.get_member(interaction.client.user.id) or await interaction.guild.fetch_member(interaction.client.user.id)
@@ -183,12 +173,12 @@ class RykerAdminActionView(discord.ui.View):
 
             if member:
                 await member.kick(reason=f"管理員 {interaction.user} ({interaction.user.id}) 按鈕操作：踢出伺服器")
-                print(f"👢 [幹男防護 - 按鈕踢出] 伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 被操作人: {self.target_user} ({self.target_user.id})")
+                print(f"👋 [幹男防護 - 按鈕踢出] 伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 被操作人: {self.target_user} ({self.target_user.id})")
                 for item in self.children:
                     item.disabled = True
                 await interaction.response.edit_message(view=self)
                 await interaction.followup.send(
-                    f"👢 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **踢出伺服器**。"
+                    f"👋 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **踢出伺服器**。"
                 )
             else:
                 await interaction.response.send_message(f"⚠️ 用戶 `{self.target_user.name}` 已不在伺服器中。", ephemeral=True)
@@ -256,7 +246,7 @@ class RykerBatchBanView(discord.ui.View):
             try:
                 await interaction.guild.ban(
                     discord.Object(id=uid),
-                    reason=f"管理員 {interaction.user} ({interaction.user.id}) 批次清空黑名單",
+                    reason=f"管理員 {interaction.user} ({interaction.user.id}) 一鍵批次封鎖惡意黑名單帳號",
                     delete_message_seconds=0
                 )
                 banned_count += 1
@@ -265,17 +255,54 @@ class RykerBatchBanView(discord.ui.View):
 
         for item in self.children:
             item.disabled = True
-        await interaction.message.edit(view=self)
+
+        embed = interaction.message.embeds[0] if (interaction.message and interaction.message.embeds) else None
+        if embed:
+            embed.set_footer(text=f"⚡ 已由 {interaction.user.display_name} 完成一鍵封鎖 (成功 {banned_count} 人 / 失敗 {failed_count} 人)")
+
+        try:
+            if embed:
+                await interaction.edit_original_response(embed=embed, view=self)
+            else:
+                await interaction.edit_original_response(view=self)
+        except Exception:
+            try:
+                if embed:
+                    await interaction.message.edit(embed=embed, view=self)
+                else:
+                    await interaction.message.edit(view=self)
+            except Exception:
+                pass
 
         print(f"⚡ [幹男防護 - 一鍵BAN] 伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 成功: {banned_count} 人 | 失敗: {failed_count} 人")
-        await interaction.followup.send(
-            f"⚡ 已完成一鍵封鎖操作！成功封鎖 `{banned_count}` 個惡意帳號，失敗 `{failed_count}` 個。",
-            ephemeral=True
+        
+        # 抄送一鍵封鎖紀錄至本伺服器專屬日誌頻道
+        embed_batch_log = discord.Embed(
+            description=(
+                f"⚡ **[管理員一鍵處決] 批次封鎖黑名單**\n\n"
+                f"• **操作管理員**：{interaction.user.mention} (`{interaction.user.id}`)\n"
+                f"• **處決結果**：成功封鎖 `{banned_count}` 人 / 失敗 `{failed_count}` 人\n"
+                f"• **狀態**：已成功將該清單內所有惡意破壞者帳號自本伺服器封鎖！"
+            ),
+            color=discord.Color.red()
         )
+        embed_batch_log.set_footer(text="TWERG HoneyBot - 伺服器防護日誌")
+        try:
+            await send_server_log(interaction.guild, embed_batch_log)
+        except Exception as se:
+            print(f"⚠️ [幹男防護] 抄送一鍵封鎖日誌失敗: {se}")
+
+        try:
+            await interaction.followup.send(
+                f"⚡ 已完成一鍵封鎖操作！成功封鎖 `{banned_count}` 個惡意帳號，失敗 `{failed_count}` 個。",
+                ephemeral=True
+            )
+        except Exception as fe:
+            print(f"⚠️ [幹男防護] 發送一鍵封鎖完成通報失敗: {fe}")
 
 class RykerDefenseCog(commands.Cog):
     """
-    Ryker 防護與發言監控系統 2.0 (獨立資料庫版)
+    防護與發言監控系統 2.0 (獨立資料庫版)
     支援：
     1. 雙資料庫體系：counts.db (活躍) + counts_archive.db (歸檔)
     2. ryker_targets.db：優先惡意帳號黑名單
@@ -322,6 +349,48 @@ class RykerDefenseCog(commands.Cog):
                 explicit_mentions.append(user)
         return explicit_mentions
 
+    def _migrate_legacy_dbs(self):
+        """若存在舊版資料庫 (fkfeboy_counts.db, ryker_targets.db, ryker_counts.db)，將數據遷移至新版 SQLite 資料庫"""
+        # 1. 舊版 ryker_targets.db -> ryker_badusers.db
+        if os.path.exists('ryker_targets.db') and os.path.exists(self.db_badusers):
+            try:
+                with sqlite3.connect('ryker_targets.db') as old_conn:
+                    cursor = old_conn.cursor()
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='bad_users';")
+                    if cursor.fetchone():
+                        cursor.execute("SELECT user_id, added_by, added_at, note FROM bad_users")
+                        rows = cursor.fetchall()
+                        if rows:
+                            with sqlite3.connect(self.db_badusers) as new_conn:
+                                new_conn.cursor().executemany("""
+                                    INSERT OR IGNORE INTO bad_users (user_id, added_by, added_at, note)
+                                    VALUES (?, ?, ?, ?)
+                                """, rows)
+                                new_conn.commit()
+            except Exception as e:
+                print(f"⚠️ [幹男防護] 遷移舊版 ryker_targets.db 時發生錯誤: {e}")
+
+        # 2. 舊版 ryker_counts.db 或 fkfeboy_counts.db -> counts.db
+        legacy_counts_files = ['ryker_counts.db', 'fkfeboy_counts.db']
+        for legacy_db in legacy_counts_files:
+            if os.path.exists(legacy_db):
+                try:
+                    with sqlite3.connect(legacy_db) as old_conn:
+                        cursor = old_conn.cursor()
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='message_counts';")
+                        if cursor.fetchone():
+                            cursor.execute("SELECT guild_id, user_id, count, last_timestamp FROM message_counts")
+                            rows = cursor.fetchall()
+                            if rows:
+                                with sqlite3.connect(self.db_counts) as new_conn:
+                                    new_conn.cursor().executemany("""
+                                        INSERT OR IGNORE INTO message_counts (guild_id, user_id, count, last_timestamp)
+                                        VALUES (?, ?, ?, ?)
+                                    """, rows)
+                                    new_conn.commit()
+                except Exception as e:
+                    print(f"⚠️ [幹男防護] 遷移舊版 {legacy_db} 時發生錯誤: {e}")
+
     def _init_all_dbs(self):
         """初始化 counts.db, counts_archive.db 與 ryker_targets.db"""
         try:
@@ -354,7 +423,7 @@ class RykerDefenseCog(commands.Cog):
                 """)
                 conn.commit()
 
-            # 3. Ryker 優先黑名單庫
+            # 3. 幹男優先黑名單庫
             self._init_targets_db()
 
         except Exception as e:
@@ -597,7 +666,7 @@ class RykerDefenseCog(commands.Cog):
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容或暱稱觸發)*"
             embed = discord.Embed(
                 description=(
-                    f"🚨 已匹配到 Ryker 惡意用戶 {author.mention} (`{author.name}`)\n"
+                    f"🚨 已匹配到惡意用戶 {author.mention} (`{author.name}`)\n"
                     f"已執行 **3 天禁言** 處置，等待管理員進行後續處決操作。\n\n"
                     f"**原因**：{reason_summary}。\n"
                     f"**原訊息內容**：\n{content_display}\n"
@@ -606,9 +675,9 @@ class RykerDefenseCog(commands.Cog):
                 color=discord.Color.red()
             )
             embed.set_thumbnail(url=author.display_avatar.url)
-            embed.set_footer(text="TWERG HoneyBot - Ryker 防護系統")
+            embed.set_footer(text="TWERG HoneyBot 防護系統")
             await channel.send(
-                content="🚨 Ryker 惡意用戶已自動禁言 3 天（等待管理員處理）",
+                content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）",
                 embed=embed,
                 view=RykerAdminActionView(author)
             )
@@ -632,7 +701,7 @@ class RykerDefenseCog(commands.Cog):
                     console_channel = self.bot.get_channel(int(console_id))
                     if console_channel and console_channel.id != channel.id:
                         await console_channel.send(
-                            content="🚨 Ryker 惡意用戶已自動禁言 3 天（等待管理員處理）",
+                            content="🚨 惡意用戶已自動禁言 3 天（等待管理員處理）",
                             embed=embed,
                             view=RykerAdminActionView(author)
                         )
@@ -707,7 +776,7 @@ class RykerDefenseCog(commands.Cog):
         except Exception as e:
             print(f"⚠️ [幹男防護] 自動清理舊發言紀錄時發生錯誤: {e}")
 
-    @app_commands.command(name="ryker", description="查看 Ryker 惡意帳號名單與一鍵封鎖操作")
+    @app_commands.command(name="幹男", description="[擁有者/信任者] 查看與增刪幹男惡意帳號名單與一鍵封鎖")
     @app_commands.rename(action="動作", user_id="使用者id")
     @app_commands.describe(action="選擇動作 (查看 / 新增 / 刪除)", user_id="要新增或刪除的用戶 ID (數字)")
     @app_commands.choices(
@@ -728,11 +797,11 @@ class RykerDefenseCog(commands.Cog):
 
         if val == "list":
             if not bad_users_set:
-                await interaction.response.send_message("ℹ️ 目前 Ryker 惡意帳號庫 (bad_users) 為空。", ephemeral=True)
+                await interaction.response.send_message("ℹ️ 目前惡意帳號庫 (bad_users) 為空。", ephemeral=True)
                 return
 
             bad_list = list(bad_users_set)
-            lines = ["🚨 **Ryker 惡意破壞者帳號黑名單 (bad_users)**："]
+            lines = ["🚨 **惡意破壞者帳號黑名單 (bad_users)**："]
             for uid in bad_list:
                 lines.append(f"• <@{uid}> (`{uid}`)")
 
@@ -746,12 +815,12 @@ class RykerDefenseCog(commands.Cog):
             )
             embed.set_footer(text="點擊下方按鈕可一鍵將此清單所有惡意帳號自本伺服器封鎖。")
             view = RykerBatchBanView(bad_list, interaction.user.id)
-            await interaction.response.send_message(content="🛡️ **Ryker 惡意破壞者帳號管理 (bad_users)**", embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(content="🛡️ **惡意破壞者帳號管理 (bad_users)**", embed=embed, view=view, ephemeral=True)
             return
 
         # 新增/刪除動作需要權限檢查 (信任的人)
         if not is_user_trusted(interaction.user.id):
-            await interaction.response.send_message("❌ 你不是「信任的人」，沒有權限增刪 Ryker 惡意帳號庫 (bad_users)！", ephemeral=True)
+            await interaction.response.send_message("❌ 你不是「信任的人」，沒有權限增刪惡意帳號庫 (bad_users)！", ephemeral=True)
             return
 
         # 解析輸入內容中的所有數字 ID (支援以空白、逗號、換行等分隔多個 ID)
@@ -779,7 +848,7 @@ class RykerDefenseCog(commands.Cog):
                     else:
                         failed.append(uid)
 
-            lines = ["✅ **Ryker 惡意帳號 (bad_users) 批次新增結果**："]
+            lines = ["✅ **惡意帳號 (bad_users) 批次新增結果**："]
             if newly_added:
                 mentions = ", ".join([f"<@{uid}> (`{uid}`)" for uid in newly_added])
                 lines.append(f"• 🟢 **成功新增 ({len(newly_added)} 人)**：{mentions}")
@@ -807,7 +876,7 @@ class RykerDefenseCog(commands.Cog):
                     else:
                         failed.append(uid)
 
-            lines = ["🗑️ **Ryker 惡意帳號 (bad_users) 批次刪除結果**："]
+            lines = ["🗑️ **惡意帳號 (bad_users) 批次刪除結果**："]
             if newly_removed:
                 lines.append(f"• 🟢 **成功移除 ({len(newly_removed)} 人)**：{', '.join([str(u) for u in newly_removed])}")
             if not_found:
@@ -817,7 +886,7 @@ class RykerDefenseCog(commands.Cog):
 
             await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="target_users", description="查看與增刪受害者/保護對象名單 (target_users)")
+    @app_commands.command(name="保護對象", description="[擁有者/信任者] 查看與增刪受害者/保護對象名單")
     @app_commands.rename(action="動作", user_id="使用者id")
     @app_commands.describe(action="選擇動作 (查看 / 新增 / 刪除)", user_id="要新增或刪除的用戶 ID (數字)")
     @app_commands.choices(
@@ -926,7 +995,7 @@ class RykerDefenseCog(commands.Cog):
 
             await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="syncban", description="[擁有者/信任者] 手動執行跨伺服器聯防封鎖")
+    @app_commands.command(name="聯防封鎖", description="[擁有者/信任者] 手動執行跨伺服器聯防封鎖")
     @app_commands.rename(user_id="使用者id", reason="封鎖原因")
     @app_commands.describe(user_id="要聯防封鎖的用戶 ID (可輸入多個，以空白或逗號分隔)", reason="封鎖原因 (選填)")
     @app_commands.guilds(518699949500661760, 897116721159233576)
@@ -1036,7 +1105,7 @@ class RykerDefenseCog(commands.Cog):
         is_eew_paused_now = is_eew_paused(self, now_ts, eew_pause_enabled)
 
         # ----------------------------------------------------
-        # 模組 2: Ryker 惡意破壞者帳號 (bad_users) 比對 (defense_bad_users.py)
+        # 模組 2: 惡意破壞者帳號 (bad_users) 比對 (defense_bad_users.py)
         # ----------------------------------------------------
         if bad_users_enabled and not is_eew_paused_now:
             if await check_bad_users(self, message, bad_users_set):
@@ -1046,16 +1115,7 @@ class RykerDefenseCog(commands.Cog):
         # 免疫身分檢查：管理員、排除身分組、最高身分組高於/等於機器人
         # ----------------------------------------------------
         if isinstance(message.author, discord.Member):
-            excluded_roles = []
-            if os.path.exists('honeypot_settings.json'):
-                try:
-                    with open('honeypot_settings.json', 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        guild_data = data.get(str(message.guild.id), {})
-                        if isinstance(guild_data, dict):
-                            excluded_roles = guild_data.get("excluded_roles", [])
-                except Exception:
-                    pass
+            excluded_roles = g_settings.get("excluded_roles", [])
 
             has_excluded_role = any(role.id in excluded_roles for role in message.author.roles)
             is_immune = (

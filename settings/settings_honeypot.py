@@ -32,7 +32,7 @@ class HoneypotSettingsView(discord.ui.View):
     def build_embed(self, guild: discord.Guild) -> discord.Embed:
         embed = discord.Embed(
             title="`🍯` 蜜罐頻道防護設定",
-            description="蜜罐頻道防護為 TWERG 主伺服器專屬的極速無聲誘捕與處決機制。",
+            description="蜜罐頻道防護為 TWERG 主伺服器專屬的誘捕機制。",
             color=0x41809b
         )
 

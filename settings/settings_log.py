@@ -1,5 +1,5 @@
 import discord
-from settings.settings_utils import load_honeypot_settings, save_honeypot_settings
+from settings.settings_utils import load_guild_settings, save_guild_settings
 
 class LogSettingsView(discord.ui.View):
     def __init__(self, bot, guild_id: int):
@@ -8,8 +8,7 @@ class LogSettingsView(discord.ui.View):
         self.guild_id = guild_id
         self.guild_id_str = str(guild_id)
 
-        self.hp_all_settings = load_honeypot_settings()
-        self.hp_settings = self.hp_all_settings.get(self.guild_id_str, {})
+        self.hp_settings = load_guild_settings(self.guild_id)
         self._build_components()
 
     def _build_components(self):
@@ -59,7 +58,7 @@ class LogSettingsView(discord.ui.View):
             value=(
                 "• 🚨 **蜜罐自動 BAN** (蜜罐頻道發言處決)\n"
                 "• 🚨 **陷阱身份組自動 BAN** (提及陷阱身份組處決)\n"
-                "• 🚨 **Ryker 惡意帳號自動處決** (3 天禁言通報)\n"
+                "• 🚨 **惡意帳號自動處決** (3 天禁言通報)\n"
                 "• 🔨 **管理員按鈕處決** (管理員處決與黑名單自動加入紀錄)\n"
                 "• 🤝 **跨伺服器聯防同步 BAN** (源自其他伺服器的聯防預先封鎖紀錄)"
             ),
@@ -76,8 +75,7 @@ class LogSettingsView(discord.ui.View):
         else:
             self.hp_settings["log_channel_id"] = None
 
-        self.hp_all_settings[self.guild_id_str] = self.hp_settings
-        save_honeypot_settings(self.hp_all_settings)
+        save_guild_settings(self.guild_id, self.hp_settings)
 
         self._build_components()
         await interaction.response.edit_message(embed=self.build_embed(interaction.guild), view=self)

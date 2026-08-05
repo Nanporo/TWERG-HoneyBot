@@ -2,36 +2,14 @@ import discord
 from discord.ext import commands
 import json
 import os
-from settings.settings_utils import send_server_log
+from settings.settings_utils import send_server_log, load_guild_settings
 
 class TrapRolesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.settings_file = 'honeypot_settings.json'
 
     def get_settings(self, guild_id):
-        default_settings = {
-            "excluded_roles": [],
-            "trap_roles": [],
-            "delete_messages": True
-        }
-        if not os.path.exists(self.settings_file):
-            return default_settings
-            
-        with open(self.settings_file, 'r', encoding='utf-8') as f:
-            try:
-                data = json.load(f)
-                guild_data = data.get(str(guild_id), {})
-                if isinstance(guild_data, list):
-                    migrated = default_settings.copy()
-                    migrated["excluded_roles"] = guild_data
-                    return migrated
-                for k, v in default_settings.items():
-                    if k not in guild_data:
-                        guild_data[k] = v
-                return guild_data
-            except json.JSONDecodeError:
-                return default_settings
+        return load_guild_settings(guild_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

@@ -6,24 +6,18 @@ import json
 import os
 from cogs.server_check import is_server_authorized
 
+from settings.settings_utils import load_guild_settings
+
 class CountsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db_counts = 'ryker_counts.db'
-        self.db_archive = 'ryker_archive.db'
-        self.settings_file = 'ryker_settings.json'
+        self.db_counts = 'counts.db'
+        self.db_archive = 'counts_archive.db'
 
     def get_guild_settings(self, guild_id: int) -> dict:
-        if not os.path.exists(self.settings_file):
-            return {}
-        try:
-            with open(self.settings_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get(str(guild_id), {})
-        except Exception:
-            return {}
+        return load_guild_settings(guild_id)
 
-    @app_commands.command(name="發言統計", description="查看本伺服器目前的 Ryker 防護與發言統計 (僅限管理員)")
+    @app_commands.command(name="發言統計", description="[管理員] 查看本伺服器目前的防護與發言統計")
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def counts_command(self, interaction: discord.Interaction):
@@ -66,11 +60,12 @@ class CountsCog(commands.Cog):
             await interaction.response.send_message(f"❌ 查詢資料庫時發生錯誤: {e}", ephemeral=True)
             return
 
-        status_str = "`🟢 已開啟` (包含潛水舊成員)" if lurker_monitor else "`🔴 已停用` (僅限新帳號/新成員)"
+        status_str = "`🟢` 已開啟 (包含潛水舊成員)" if lurker_monitor else "`🔴` 已停用 (僅限新帳號/新成員)"
 
         summary_header = (
             f"**潛水用戶監控**：{status_str}\n"
             f"**伺服器發言監控門檻**：`{threshold}` 次\n"
+            f"───────────────────────────\n"
             f"**本伺服器統計**：\n監控中 (`<{threshold}`次)：**{pending_count}** 人\n已畢業 (`>={threshold}`次)：**{completed_count}** 人\n"
             f"───────────────────────────"
         )

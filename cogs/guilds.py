@@ -4,7 +4,14 @@ from discord import app_commands
 import json
 import os
 from typing import Optional
-from cogs.server_check import load_server_authorizations, save_server_authorizations, is_server_authorized
+from settings.settings_utils import (
+    load_server_authorizations,
+    save_server_authorizations,
+    is_server_authorized,
+    load_all_guild_settings,
+    load_guild_settings,
+    save_guild_settings
+)
 
 def check_is_owner(user_id: int) -> bool:
     """檢查使用者是否為機器人擁有者 (從 config.json 讀取 OWNER_ID)"""
@@ -21,23 +28,11 @@ def check_is_owner(user_id: int) -> bool:
     return False
 
 def get_honeypot_settings() -> dict:
-    settings_file = 'honeypot_settings.json'
-    if not os.path.exists(settings_file):
-        return {}
-    try:
-        with open(settings_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    return load_all_guild_settings()
 
 def save_honeypot_settings(data: dict):
-    settings_file = 'honeypot_settings.json'
-    try:
-        with open(settings_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"⚠️ [Guilds] 儲存 honeypot_settings.json 失敗: {e}")
+    for k, v in data.items():
+        save_guild_settings(int(k), v)
 
 def get_bot_config() -> dict:
     try:
@@ -174,7 +169,7 @@ class GuildsView(discord.ui.View):
         trap_str = ", ".join(valid_trap) if valid_trap else "無"
         
         del_msg = g_settings.get("delete_messages", True)
-        del_msg_str = "`🟢 已啟用`" if del_msg else "`🔴 已停用`"
+        del_msg_str = "`🟢` 已啟用" if del_msg else "`🔴` 已停用"
         
         hp_id = config.get("HONEYPOT_ID")
         hp_channel = guild.get_channel(int(hp_id)) if hp_id else None
@@ -307,7 +302,7 @@ class GuildsView(discord.ui.View):
         current_status = self.guild_settings[gid_str].get("delete_messages", True)
         self.guild_settings[gid_str]["delete_messages"] = not current_status
         
-        save_honeypot_settings(self.guild_settings)
+        save_guild_settings(self.current_detail_guild_id, self.guild_settings[gid_str])
         
         content, embed = await self.get_current_content_and_embed()
         await interaction.response.edit_message(content=content, embed=embed, view=self)
@@ -337,7 +332,7 @@ class GuildsCog(commands.Cog):
             return True
         return await interaction.client.is_owner(interaction.user)
 
-    @app_commands.command(name="伺服器列表", description="（限擁有者）顯示機器人加入的伺服器列表與狀態 Server Guilds")
+    @app_commands.command(name="伺服器列表", description="[擁有者] 顯示機器人加入的伺服器列表與狀態 Server Guilds")
     @app_commands.rename(sort_by="排序方式", search="搜尋關鍵字", feature_filter="功能篩選", guild_id="伺服器id")
     @app_commands.describe(sort_by="選擇列表排序方式", search="輸入伺服器名稱或 ID", feature_filter="篩選啟用特定功能的伺服器", guild_id="直接輸入伺服器 ID 查看詳情")
     @app_commands.choices(

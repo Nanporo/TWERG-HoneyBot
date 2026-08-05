@@ -1,5 +1,5 @@
 import discord
-from settings.settings_utils import load_honeypot_settings, save_honeypot_settings
+from settings.settings_utils import load_guild_settings, save_guild_settings
 
 class RoleSettingsView(discord.ui.View):
     def __init__(self, bot, guild_id: int):
@@ -8,8 +8,7 @@ class RoleSettingsView(discord.ui.View):
         self.guild_id = guild_id
         self.guild_id_str = str(guild_id)
 
-        self.hp_all_settings = load_honeypot_settings()
-        self.hp_settings = self.hp_all_settings.get(self.guild_id_str, {})
+        self.hp_settings = load_guild_settings(self.guild_id)
         self._build_components()
 
     def _build_components(self):
@@ -90,8 +89,7 @@ class RoleSettingsView(discord.ui.View):
     async def excluded_callback(self, interaction: discord.Interaction):
         roles = [r.id for r in self.excluded_select.values]
         self.hp_settings["excluded_roles"] = roles
-        self.hp_all_settings[self.guild_id_str] = self.hp_settings
-        save_honeypot_settings(self.hp_all_settings)
+        save_guild_settings(self.guild_id, self.hp_settings)
         
         self._build_components()
         await interaction.response.edit_message(embed=self.build_embed(interaction.guild), view=self)
@@ -99,8 +97,7 @@ class RoleSettingsView(discord.ui.View):
     async def trap_callback(self, interaction: discord.Interaction):
         roles = [r.id for r in self.trap_select.values]
         self.hp_settings["trap_roles"] = roles
-        self.hp_all_settings[self.guild_id_str] = self.hp_settings
-        save_honeypot_settings(self.hp_all_settings)
+        save_guild_settings(self.guild_id, self.hp_settings)
 
         self._build_components()
         await interaction.response.edit_message(embed=self.build_embed(interaction.guild), view=self)
@@ -108,8 +105,7 @@ class RoleSettingsView(discord.ui.View):
     async def toggle_del_callback(self, interaction: discord.Interaction):
         curr = self.hp_settings.get("delete_messages", True)
         self.hp_settings["delete_messages"] = not curr
-        self.hp_all_settings[self.guild_id_str] = self.hp_settings
-        save_honeypot_settings(self.hp_all_settings)
+        save_guild_settings(self.guild_id, self.hp_settings)
 
         self._build_components()
         await interaction.response.edit_message(embed=self.build_embed(interaction.guild), view=self)

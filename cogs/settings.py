@@ -9,7 +9,7 @@ class SettingsCog(commands.Cog):
         self.bot = bot
         self.settings_file = 'honeypot_settings.json'
 
-    @app_commands.command(name="設定", description="呼叫伺服器防護與系統設定面板 (僅限伺服器管理員)")
+    @app_commands.command(name="設定", description="[管理員] 呼叫伺服器防護與系統設定面板")
     @app_commands.default_permissions(administrator=True)
     @app_commands.checks.has_permissions(administrator=True)
     async def settings_command(self, interaction: discord.Interaction):
