@@ -90,7 +90,7 @@ def _init_all_settings_dbs():
         print(f"⚠️ [DB] 初始化設定資料庫失敗: {e}")
 
 def _migrate_legacy_json_files():
-    """若存在舊版 JSON 檔 (ryker_settings.json, honeypot_settings.json, server_authorizations.json)，將數據遷移至 SQLite"""
+    """若存在舊版 JSON 檔 (ryker_settings.json, honeypot_settings.json, server_authorizations.json)，將數據遷移至 SQLite (僅於尚未寫入 DB 時遷移，不覆蓋既有設定)"""
     # 1. 遷移 ryker_settings.json & honeypot_settings.json -> guild_settings.db
     ryker_json = load_json_file('ryker_settings.json', {})
     hp_json = load_json_file('honeypot_settings.json', {})
@@ -128,20 +128,7 @@ def _migrate_legacy_json_files():
                         eew_pause_enabled, global_monitor, sync_ban,
                         excluded_roles, trap_roles, delete_messages, log_channel_id
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(guild_id) DO UPDATE SET
-                        monitor_threshold=excluded.monitor_threshold,
-                        bad_users_enabled=excluded.bad_users_enabled,
-                        target_users_enabled=excluded.target_users_enabled,
-                        bad_words_enabled=excluded.bad_words_enabled,
-                        image_spam_enabled=excluded.image_spam_enabled,
-                        header_spam_enabled=excluded.header_spam_enabled,
-                        eew_pause_enabled=excluded.eew_pause_enabled,
-                        global_monitor=excluded.global_monitor,
-                        sync_ban=excluded.sync_ban,
-                        excluded_roles=excluded.excluded_roles,
-                        trap_roles=excluded.trap_roles,
-                        delete_messages=excluded.delete_messages,
-                        log_channel_id=excluded.log_channel_id
+                    ON CONFLICT(guild_id) DO NOTHING
                 """, (
                     gid, threshold, bad_users, target_users, bad_words, img_spam,
                     header_spam, eew_pause, global_mon, sync_ban,
@@ -167,12 +154,7 @@ def _migrate_legacy_json_files():
                     INSERT INTO server_authorizations (
                         guild_id, authorized, updated_at, updated_by, authorized_at, authorized_by
                     ) VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(guild_id) DO UPDATE SET
-                        authorized=excluded.authorized,
-                        updated_at=excluded.updated_at,
-                        updated_by=excluded.updated_by,
-                        authorized_at=excluded.authorized_at,
-                        authorized_by=excluded.authorized_by
+                    ON CONFLICT(guild_id) DO NOTHING
                 """, (gid, auth_val, updated_at, updated_by, authorized_at, authorized_by))
             conn.commit()
 
