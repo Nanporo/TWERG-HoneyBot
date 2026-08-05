@@ -7,6 +7,7 @@ class LogSettingsView(discord.ui.View):
         self.bot = bot
         self.guild_id = guild_id
         self.guild_id_str = str(guild_id)
+        self.message = None
 
         self.hp_settings = load_guild_settings(self.guild_id)
         self._build_components()
@@ -36,10 +37,19 @@ class LogSettingsView(discord.ui.View):
         self.add_item(self.back_btn)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not interaction.user.guild_permissions.administrator:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 只有伺服器管理員才能操作防護日誌設定！", ephemeral=True)
             return False
         return True
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                for item in self.children:
+                    item.disabled = True
+                await self.message.edit(view=self)
+            except Exception:
+                pass
 
     def build_embed(self, guild: discord.Guild) -> discord.Embed:
         embed = discord.Embed(
@@ -83,5 +93,6 @@ class LogSettingsView(discord.ui.View):
     async def back_callback(self, interaction: discord.Interaction):
         from settings.settings_main import SettingsView
         main_view = SettingsView(self.bot, self.guild_id)
+        main_view.message = self.message
         content, embed = main_view.get_content_and_embed(interaction.guild)
         await interaction.response.edit_message(content=content, embed=embed, view=main_view)

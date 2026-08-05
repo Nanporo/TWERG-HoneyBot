@@ -6,6 +6,7 @@ class HoneypotSettingsView(discord.ui.View):
         super().__init__(timeout=300)
         self.bot = bot
         self.guild_id = guild_id
+        self.message = None
         self.config = load_config()
         self.twerg_id = int(self.config.get("TWERG_SERVER_ID") or self.config.get("SERVER_ID", 518699949500661760))
         self.is_twerg = (self.guild_id == self.twerg_id)
@@ -24,10 +25,19 @@ class HoneypotSettingsView(discord.ui.View):
         self.add_item(self.back_btn)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if not interaction.user.guild_permissions.administrator:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 只有伺服器管理員才能查看蜜罐防護設定！", ephemeral=True)
             return False
         return True
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                for item in self.children:
+                    item.disabled = True
+                await self.message.edit(view=self)
+            except Exception:
+                pass
 
     def build_embed(self, guild: discord.Guild) -> discord.Embed:
         embed = discord.Embed(
@@ -54,5 +64,6 @@ class HoneypotSettingsView(discord.ui.View):
     async def back_callback(self, interaction: discord.Interaction):
         from settings.settings_main import SettingsView
         main_view = SettingsView(self.bot, self.guild_id)
+        main_view.message = self.message
         content, embed = main_view.get_content_and_embed(interaction.guild)
         await interaction.response.edit_message(content=content, embed=embed, view=main_view)

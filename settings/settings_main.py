@@ -30,28 +30,49 @@ class SettingsView(discord.ui.View):
     def _build_components(self):
         self.clear_items()
 
-        # 1. 模組選擇下拉選單 (Row 0)
-        options = [
-            discord.SelectOption(label="白名單與身份組", value="roles", description="設定排除防護白名單與提及即封鎖的陷阱身份組", emoji="🛡️"),
-            discord.SelectOption(label="惡意帳號與門檻", value="ryker", description="設定發言監控門檻、潛水監控、聯防與 EEW 暫停", emoji="🚨"),
-            discord.SelectOption(label="伺服器防護日誌", value="log", description="設定本伺服器獨立處決與聯防日誌頻道", emoji="📡"),
-            discord.SelectOption(label="蜜罐頻道防護", value="honeypot", description="查看蜜罐無聲誘捕與處決頻道狀態", emoji="🍯")
-        ]
-
-        self.select_menu = discord.ui.Select(
-            placeholder="請選擇要調整的防護模組...",
-            options=options,
+        # 1. 功能模組導覽按鈕 (Row 0 & Row 1)
+        btn_roles = discord.ui.Button(
+            label="白名單與身份組",
+            style=discord.ButtonStyle.primary,
+            emoji="🛡️",
             row=0
         )
-        self.select_menu.callback = self.select_category_callback
-        self.add_item(self.select_menu)
+        btn_roles.callback = self._make_category_callback("roles")
+        self.add_item(btn_roles)
 
-        # 2. 關閉按鈕 (Row 1)
+        btn_ryker = discord.ui.Button(
+            label="惡意帳號與門檻",
+            style=discord.ButtonStyle.primary,
+            emoji="🚨",
+            row=0
+        )
+        btn_ryker.callback = self._make_category_callback("ryker")
+        self.add_item(btn_ryker)
+
+        btn_log = discord.ui.Button(
+            label="伺服器防護日誌",
+            style=discord.ButtonStyle.primary,
+            emoji="📡",
+            row=1
+        )
+        btn_log.callback = self._make_category_callback("log")
+        self.add_item(btn_log)
+
+        btn_honeypot = discord.ui.Button(
+            label="蜜罐頻道防護",
+            style=discord.ButtonStyle.primary,
+            emoji="🍯",
+            row=1
+        )
+        btn_honeypot.callback = self._make_category_callback("honeypot")
+        self.add_item(btn_honeypot)
+
+        # 2. 關閉按鈕 (Row 2)
         self.close_btn = discord.ui.Button(
             label="關閉設定",
-            style=discord.ButtonStyle.secondary,
+            style=discord.ButtonStyle.danger,
             emoji="❌",
-            row=1
+            row=2
         )
         self.close_btn.callback = self.close_callback
         self.add_item(self.close_btn)
@@ -61,10 +82,19 @@ class SettingsView(discord.ui.View):
             await interaction.response.send_message("❌ 本伺服器尚未獲得機器人擁有者授權許可，暫無法開啟與調整設定。", ephemeral=True)
             return False
             
-        if not interaction.user.guild_permissions.administrator:
+        if not isinstance(interaction.user, discord.Member) or not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ 只有伺服器管理員才能操作此設定面板！", ephemeral=True)
             return False
         return True
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                for item in self.children:
+                    item.disabled = True
+                await self.message.edit(view=self)
+            except Exception:
+                pass
 
     def get_content_and_embed(self, guild: discord.Guild):
         if not is_server_authorized(self.guild_id):
@@ -76,7 +106,7 @@ class SettingsView(discord.ui.View):
 
         embed = discord.Embed(
             title="`⚙️` HoneyBot 伺服器防護設定面板",
-            description="請從下方下拉選單選擇要調整或檢視的防護模組。",
+            description="點擊下方按鈕可進入對應的防護模組進行詳細調整。",
             color=0x41809b
         )
 
@@ -111,28 +141,36 @@ class SettingsView(discord.ui.View):
 
         return "🛡️ **HoneyBot 防護與系統設定面板**", embed
 
-    async def select_category_callback(self, interaction: discord.Interaction):
-        val = self.select_menu.values[0]
-        if val == "roles":
-            view = RoleSettingsView(self.bot, self.guild_id)
-            await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
-        elif val == "ryker":
-            view = BadUsersSettingsView(self.bot, self.guild_id)
-            await interaction.response.edit_message(embed=view.build_embed(), view=view)
-        elif val == "log":
-            view = LogSettingsView(self.bot, self.guild_id)
-            await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
-        elif val == "honeypot":
-            view = HoneypotSettingsView(self.bot, self.guild_id)
-            await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
+    def _make_category_callback(self, category: str):
+        async def callback(interaction: discord.Interaction):
+            if category == "roles":
+                view = RoleSettingsView(self.bot, self.guild_id)
+                view.message = self.message
+                await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
+            elif category == "ryker":
+                view = BadUsersSettingsView(self.bot, self.guild_id)
+                view.message = self.message
+                await interaction.response.edit_message(embed=view.build_embed(), view=view)
+            elif category == "log":
+                view = LogSettingsView(self.bot, self.guild_id)
+                view.message = self.message
+                await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
+            elif category == "honeypot":
+                view = HoneypotSettingsView(self.bot, self.guild_id)
+                view.message = self.message
+                await interaction.response.edit_message(embed=view.build_embed(interaction.guild), view=view)
+        return callback
 
     async def close_callback(self, interaction: discord.Interaction):
         try:
-            await interaction.response.defer()
+            await interaction.response.edit_message(
+                content="🔒 **已關閉 HoneyBot 伺服器防護設定面板。**",
+                embed=None,
+                view=None
+            )
         except Exception:
-            pass
-        try:
-            await interaction.message.delete()
-        except Exception:
-            pass
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
         self.stop()
