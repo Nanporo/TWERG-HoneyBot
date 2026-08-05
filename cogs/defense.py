@@ -379,8 +379,15 @@ class RykerDefenseCog(commands.Cog):
                         cursor = old_conn.cursor()
                         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='message_counts';")
                         if cursor.fetchone():
-                            cursor.execute("SELECT guild_id, user_id, count, last_timestamp FROM message_counts")
-                            rows = cursor.fetchall()
+                            cols = [col[1] for col in cursor.execute("PRAGMA table_info(message_counts)").fetchall()]
+                            if "guild_id" in cols:
+                                cursor.execute("SELECT guild_id, user_id, count, last_timestamp FROM message_counts")
+                                rows = cursor.fetchall()
+                            else:
+                                # 舊版單伺服器架構，預設歸屬為 TWERG 主伺服器 ID
+                                cursor.execute("SELECT user_id, count, last_timestamp FROM message_counts")
+                                rows = [('518699949500661760', r[0], r[1], r[2]) for r in cursor.fetchall()]
+
                             if rows:
                                 with sqlite3.connect(self.db_counts) as new_conn:
                                     new_conn.cursor().executemany("""
