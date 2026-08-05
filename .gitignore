@@ -182,14 +182,16 @@ cython_debug/
 config.json
 honeypot_settings.json
 run.bat
-<<<<<<< Updated upstream
-fkfeboy_counts.json
-fkfeboy_settings.json
-=======
 .vscode/settings.json
->>>>>>> Stashed changes
 .DS_Store
 fkfeboy_counts.db-shm
 fkfeboy_counts.json.bak
 fkfeboy_counts.db-wal
 fkfeboy_counts.db
+ryker_counts.db*
+ryker_archive.db*
+ryker_targets.db*
+ryker_settings.json
+server_authorizations.json
+trusted_users.json
+

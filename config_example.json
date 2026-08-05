@@ -1,8 +1,11 @@
 {
-  "TOKEN": "DISCORD_TOKEN_HERE",
+  "TOKEN": "DISCORD_TOKEN_HERE (若要避免 Token 遭掃描防外洩，可移除此項並改用下方的切分欄位)",
+  "TOKEN_PART1": "前段_TOKEN_字串",
+  "TOKEN_PART2": "後段_TOKEN_字串",
   "OWNER_ID": [
     11111111111111111
   ],
+  "TWERG_SERVER_ID": 518699949500661760,
   "CONSOLE_ID": 333,
   "HONEYPOT_ID": 444,
   "EEW_CHANNEL_ID": 555,
