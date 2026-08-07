@@ -60,10 +60,10 @@ class CountsCog(commands.Cog):
             await interaction.response.send_message(f"❌ 查詢資料庫時發生錯誤: {e}", ephemeral=True)
             return
 
-        status_str = "`🟢` 已開啟 (包含潛水舊成員)" if lurker_monitor else "`🔴` 已停用 (僅限新帳號/新成員)"
+        status_str = "`🟢` 已開啟 (取消畢業豁免，全體成員包含已畢業老成員皆持續監控)" if lurker_monitor else "`🔴` 已停用 (預設一般模式，已畢業老成員放行)"
 
         summary_header = (
-            f"**潛水用戶監控**：{status_str}\n"
+            f"**嚴格防護模式 (全員監控)**：{status_str}\n"
             f"**伺服器發言監控門檻**：`{threshold}` 次\n"
             f"───────────────────────────\n"
             f"**本伺服器統計**：\n監控中 (`<{threshold}`次)：**{pending_count}** 人\n已畢業 (`>={threshold}`次)：**{completed_count}** 人\n"

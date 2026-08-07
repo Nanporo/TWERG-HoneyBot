@@ -102,7 +102,7 @@ class BadUsersSettingsView(discord.ui.View):
         # 4. 全局模式與聯防按鈕 (Row 3)
         is_lurker = self.bad_users_settings.get("global_monitor", False)
         btn_lurker = discord.ui.Button(
-            label="潛水用戶監控: 啟用" if is_lurker else "潛水用戶監控: 停用",
+            label="嚴格防護模式: 啟用" if is_lurker else "嚴格防護模式: 停用",
             style=discord.ButtonStyle.green if is_lurker else discord.ButtonStyle.red,
             emoji="🔍",
             row=3
@@ -181,7 +181,7 @@ class BadUsersSettingsView(discord.ui.View):
         embed.add_field(name="🖼️ 短時間圖片/附件洗板防護", value=status_icon(is_img_spam), inline=True)
         embed.add_field(name="📝 Markdown 大字體洗板防護", value=status_icon(is_header_spam), inline=True)
         embed.add_field(name="⚡ EEW 地震速報連動暫停", value=status_icon(is_eew_pause), inline=True)
-        embed.add_field(name="🔍 潛水用戶監控", value=status_icon(is_lurker), inline=True)
+        embed.add_field(name="🔍 嚴格防護模式 (全員監控)", value=status_icon(is_lurker), inline=True)
         embed.add_field(name="🤝 共同 BAN 人 (跨伺服器聯防)", value=status_icon(is_sync), inline=True)
 
         embed.set_footer(text="點擊下方按鈕即可動態開啟或關閉個別防禦模組。")

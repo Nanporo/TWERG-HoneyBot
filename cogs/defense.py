@@ -1095,7 +1095,7 @@ class RykerDefenseCog(commands.Cog):
 
         # 設定參數量與 6 大防禦模組獨立開關
         threshold = g_settings.get("monitor_threshold", 10)
-        lurker_mon = g_settings.get("global_monitor", False) # 潛水用戶監控
+        lurker_mon = g_settings.get("global_monitor", False) # 嚴格防護模式 (全體成員監控)
         eew_pause_enabled = g_settings.get("eew_pause_enabled", True) # EEW速報連動暫停
         bad_users_enabled = g_settings.get("bad_users_enabled", True) # 惡意帳號比對開關
         target_users_enabled = g_settings.get("target_users_enabled", True) # 受害者標記防護開關
@@ -1134,16 +1134,16 @@ class RykerDefenseCog(commands.Cog):
                 return
 
         # ----------------------------------------------------
-        # 正常監控邏輯：檢查發言次數與潛水用戶監控
+        # 正常監控邏輯：檢查發言次數與嚴格防護模式 (全體成員監控)
         # ----------------------------------------------------
-        # 若未開啟潛水用戶監控，且該用戶在該伺服器已歸檔畢業 (>= threshold)，放行
+        # 若未開啟嚴格防護模式，且該用戶在該伺服器已歸檔畢業 (>= threshold)，放行
         if not lurker_mon and self.is_user_archived(message.guild.id, author_id):
             return
 
         # 讀取/更新發言次數
         current_count = self.increment_user_count(message.guild.id, author_id, threshold)
 
-        # 若發言次數已達門檻且未開啟潛水用戶監控，放行
+        # 若發言次數已達門檻且未開啟嚴格防護模式，放行
         if current_count > threshold and not lurker_mon:
             return
 

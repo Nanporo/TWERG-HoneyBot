@@ -120,7 +120,7 @@ class SettingsView(discord.ui.View):
         threshold = self.ryker_settings.get("monitor_threshold", 10)
         is_lurker = self.ryker_settings.get("global_monitor", False)
         is_sync = self.ryker_settings.get("sync_ban", False)
-        ryker_status = f"`🟢` 門檻: {threshold}次 (潛水:{'開' if is_lurker else '關'} | 聯防:{'開' if is_sync else '關'})"
+        ryker_status = f"`🟢` 門檻: {threshold}次 (嚴格:{'開' if is_lurker else '關'} | 聯防:{'開' if is_sync else '關'})"
 
         log_ch_id = self.hp_settings.get("log_channel_id")
         log_ch = guild.get_channel(int(log_ch_id)) if log_ch_id else None
