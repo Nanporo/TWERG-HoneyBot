@@ -36,15 +36,22 @@ def normalize_text(text: str) -> str:
 async def check_bad_words(cog, message: discord.Message) -> bool:
     """
     敏感詞彙與組合正則特徵比對 (bad_words / REGEX_PATTERNS)
+    比對範圍：靜態 BAD_WORDS + 動態自訂詞庫 (custom_bad_words DB)
     匹配成功時刪除訊息並執行 3 天禁言處決。
     回傳 True 表示已有處置，跳過後續檢查。
     """
+    from settings.settings_utils import get_custom_bad_words
+
     raw_content = message.content or ""
     norm_content = normalize_text(raw_content)
 
-    # 1. 關鍵字比對 (BAD_WORDS)
+    # 合併靜態底層詞庫 + 動態自訂詞庫（GLOBAL + 本伺服器）
+    dynamic_words = get_custom_bad_words(str(message.guild.id))
+    all_words = list(BAD_WORDS) + dynamic_words
+
+    # 1. 關鍵字比對 (all_words)
     matched_word = None
-    for bw in BAD_WORDS:
+    for bw in all_words:
         if bw in raw_content or bw in norm_content:
             matched_word = bw
             break
@@ -73,3 +80,4 @@ async def check_bad_words(cog, message: discord.Message) -> bool:
                 print(f"⚠️ [敏感詞模組] 處決違規用戶失敗: {e}")
         return True
     return False
+

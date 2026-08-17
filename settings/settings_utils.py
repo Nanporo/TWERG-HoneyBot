@@ -49,8 +49,9 @@ def _init_all_settings_dbs():
     try:
         # 1. 初始化 guild_settings.db
         with sqlite3.connect(DB_GUILD_SETTINGS) as conn:
-            conn.cursor().execute("PRAGMA journal_mode=WAL;")
-            conn.cursor().execute("""
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS guild_settings (
                     guild_id TEXT PRIMARY KEY,
                     monitor_threshold INTEGER DEFAULT 10,
@@ -66,6 +67,17 @@ def _init_all_settings_dbs():
                     trap_roles TEXT DEFAULT '[]',
                     delete_messages INTEGER DEFAULT 1,
                     log_channel_id TEXT DEFAULT NULL
+                )
+            """)
+            # 動態自訂敏感詞庫表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS custom_bad_words (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    word     TEXT NOT NULL,
+                    added_by TEXT NOT NULL,
+                    added_at REAL NOT NULL,
+                    UNIQUE(guild_id, word)
                 )
             """)
             conn.commit()
@@ -371,6 +383,96 @@ async def send_server_log(guild: discord.Guild, embed: discord.Embed, view: disc
                     await ch.send(embed=embed)
     except Exception as e:
         print(f"⚠️ [ServerLog] 發送伺服器日誌失敗 (Guild: {guild.name}): {e}")
+
+# -------------------------------------------------------
+# 動態自訂敏感詞庫 CRUD (custom_bad_words)
+# -------------------------------------------------------
+
+def add_custom_bad_word(guild_id: str, word: str, added_by: str) -> bool:
+    """
+    新增一個自訂敏感詞至資料庫。
+    guild_id 可為專屬伺服器 ID 字串，或 "GLOBAL" 代表全域有效。
+    回傳 True 表示新增成功，False 表示詞彙已存在。
+    """
+    import time
+    _init_all_settings_dbs()
+    try:
+        with sqlite3.connect(DB_GUILD_SETTINGS) as conn:
+            conn.cursor().execute(
+                "INSERT INTO custom_bad_words (guild_id, word, added_by, added_at) VALUES (?, ?, ?, ?)",
+                (str(guild_id), word.strip(), added_by, time.time())
+            )
+            conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False  # 詞彙已存在
+    except Exception as e:
+        print(f"⚠️ [custom_bad_words] 新增失敗: {e}")
+        return False
+
+def remove_custom_bad_word(guild_id: str, word: str) -> bool:
+    """
+    從資料庫移除一個自訂敏感詞。
+    回傳 True 表示移除成功，False 表示詞彙不存在。
+    """
+    _init_all_settings_dbs()
+    try:
+        with sqlite3.connect(DB_GUILD_SETTINGS) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM custom_bad_words WHERE guild_id = ? AND word = ?",
+                (str(guild_id), word.strip())
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as e:
+        print(f"⚠️ [custom_bad_words] 移除失敗: {e}")
+        return False
+
+def get_custom_bad_words(guild_id: str) -> list[str]:
+    """
+    讀取屬於指定伺服器的自訂敏感詞列表。
+    包含兩層：「全域層 GLOBAL」 + 「各伺服器層 guild_id」的合集。
+    """
+    _init_all_settings_dbs()
+    try:
+        with sqlite3.connect(DB_GUILD_SETTINGS) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT word FROM custom_bad_words WHERE guild_id IN ('GLOBAL', ?) ORDER BY added_at",
+                (str(guild_id),)
+            )
+            return [row[0] for row in cursor.fetchall()]
+    except Exception as e:
+        print(f"⚠️ [custom_bad_words] 讀取失敗: {e}")
+        return []
+
+def list_custom_bad_words_detail(guild_id: str) -> list[dict]:
+    """
+    讀取屬於指定伺服器的詳細列表（含新增者與時間），供指令列表顯示用。
+    僅列出該伺服器層（guild_id）和全域層（GLOBAL）的詞彙。
+    """
+    _init_all_settings_dbs()
+    try:
+        with sqlite3.connect(DB_GUILD_SETTINGS) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT word, guild_id, added_by, added_at
+                FROM custom_bad_words
+                WHERE guild_id IN ('GLOBAL', ?)
+                ORDER BY guild_id DESC, added_at ASC
+                """,
+                (str(guild_id),)
+            )
+            return [
+                {"word": row[0], "scope": "全域" if row[1] == "GLOBAL" else "本伺服器",
+                 "added_by": row[2], "added_at": row[3]}
+                for row in cursor.fetchall()
+            ]
+    except Exception as e:
+        print(f"⚠️ [custom_bad_words] 讀取詳細列表失敗: {e}")
+        return []
 
 async def setup(bot):
     pass

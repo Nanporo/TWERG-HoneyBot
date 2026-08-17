@@ -39,18 +39,52 @@ class CountsCog(commands.Cog):
         pending_rows = []
 
         try:
+            # 1. 自動整理：若活躍庫中有已達門檻 (>= threshold) 的紀錄，自動歸檔至 counts_archive.db
+            if os.path.exists(self.db_counts) and os.path.exists(self.db_archive):
+                with sqlite3.connect(self.db_counts) as conn_c:
+                    cur_c = conn_c.cursor()
+                    cur_c.execute(
+                        "SELECT user_id, count, last_timestamp FROM message_counts WHERE guild_id = ? AND count >= ?",
+                        (gid_str, threshold)
+                    )
+                    over_grad_rows = cur_c.fetchall()
+                    if over_grad_rows:
+                        now_ts = discord.utils.utcnow().timestamp()
+                        with sqlite3.connect(self.db_archive) as conn_a:
+                            cur_a = conn_a.cursor()
+                            for uid, cnt, l_ts in over_grad_rows:
+                                cur_a.execute("""
+                                    INSERT INTO message_counts_archive (guild_id, user_id, count, last_timestamp, archived_at)
+                                    VALUES (?, ?, ?, ?, ?)
+                                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                                        count = excluded.count,
+                                        last_timestamp = excluded.last_timestamp,
+                                        archived_at = excluded.archived_at
+                                """, (gid_str, uid, cnt, l_ts, now_ts))
+                            conn_a.commit()
+                        cur_c.execute(
+                            "DELETE FROM message_counts WHERE guild_id = ? AND count >= ?",
+                            (gid_str, threshold)
+                        )
+                        conn_c.commit()
+
+            # 2. 查詢未畢業監控中名單 (依最近發言時間由新至舊排序)
             if os.path.exists(self.db_counts):
                 with sqlite3.connect(self.db_counts) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM message_counts WHERE guild_id = ?", (gid_str,))
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM message_counts WHERE guild_id = ? AND count < ?", 
+                        (gid_str, threshold)
+                    )
                     pending_count = cursor.fetchone()[0]
 
                     cursor.execute(
-                        "SELECT user_id, count FROM message_counts WHERE guild_id = ? ORDER BY count DESC LIMIT 30", 
-                        (gid_str,)
+                        "SELECT user_id, count, last_timestamp FROM message_counts WHERE guild_id = ? AND count < ? ORDER BY last_timestamp DESC LIMIT 30", 
+                        (gid_str, threshold)
                     )
                     pending_rows = cursor.fetchall()
 
+            # 3. 查詢已畢業人數
             if os.path.exists(self.db_archive):
                 with sqlite3.connect(self.db_archive) as conn:
                     cursor = conn.cursor()
@@ -73,14 +107,16 @@ class CountsCog(commands.Cog):
         lines = [summary_header]
 
         if pending_rows:
-            lines.append(f"🔍 **目前監控中用戶 (未滿 {threshold} 次)**：")
-            for author_id, count in pending_rows:
+            lines.append(f"🔍 **目前監控中用戶 (未滿 {threshold} 次，依最新發言排序)**：")
+            for author_id, count, last_ts in pending_rows:
                 try:
                     created_ts = int(discord.utils.snowflake_time(int(author_id)).timestamp())
                     created_str = f"<t:{created_ts}:d>"
                 except Exception:
                     created_str = "未知"
-                lines.append(f"• <@{author_id}> ── 帳號建立: {created_str} | 次數: **{count}/{threshold}**")
+                
+                last_str = f"<t:{int(last_ts)}:R>" if last_ts else "無紀錄"
+                lines.append(f"• <@{author_id}> ── 次數: **{count}/{threshold}** | 最近發言: {last_str} | 帳號建立: {created_str}")
         else:
             lines.append(f"✅ 目前本伺服器沒有任何未滿 {threshold} 次的監控中用戶。")
 
