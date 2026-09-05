@@ -26,6 +26,11 @@ from defense_modules.defense_target_users import check_target_users
 from defense_modules.defense_image_spam import check_image_spam
 from defense_modules.defense_header_spam import check_header_spam
 from defense_modules.defense_bad_words import check_bad_words
+from defense_modules.defense_text_spam import (
+    is_pure_symbols_or_emojis,
+    check_rapid_flood,
+    check_duplicate_spam
+)
 
 from settings.settings_utils import load_all_guild_settings, load_guild_settings, save_guild_settings
 
@@ -98,7 +103,14 @@ class RykerAdminActionView(discord.ui.View):
 
             for item in self.children:
                 item.disabled = True
-            await interaction.response.edit_message(view=self)
+
+            new_content = "🚨 惡意用戶已自動禁言 3 天（管理員已處理）"
+            if interaction.message and interaction.message.content:
+                if "等待管理員處理" in interaction.message.content:
+                    new_content = interaction.message.content.replace("等待管理員處理", "管理員已處理")
+                elif "1 小時" in interaction.message.content:
+                    new_content = "🚨 惡意用戶已自動禁言 1 小時（管理員已處理）"
+            await interaction.response.edit_message(content=new_content, view=self)
             
             sync_msg = ""
             # 檢查共同 BAN 人 (跨伺服器聯防封鎖)
@@ -126,7 +138,8 @@ class RykerAdminActionView(discord.ui.View):
                                         f"• **封鎖用戶**：<@{self.target_user.id}> (`{self.target_user.id}`)\n"
                                         f"• **狀態**：本伺服器已自動同步執行封鎖預防進入"
                                     ),
-                                    color=discord.Color.dark_red()
+                                    color=discord.Color.dark_red(),
+                                    timestamp=discord.utils.utcnow()
                                 )
                                 embed_sync_log.set_footer(text="TWERG HoneyBot - 跨伺服器聯防日誌")
                                 await send_server_log(g, embed_sync_log)
@@ -136,7 +149,8 @@ class RykerAdminActionView(discord.ui.View):
                     sync_msg = f"\n🤝 **跨伺服器聯防**：已同步預先封鎖至 {len(banned_guilds)} 個伺服器 ({', '.join(banned_guilds)})。"
 
             await interaction.followup.send(
-                f"🔨 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **停權（全域封鎖）**。{sync_msg}{db_added_msg}"
+                f"🔨 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **停權（全域封鎖）**。{sync_msg}{db_added_msg}",
+                ephemeral=True
             )
 
             # 抄送紀錄至目前伺服器的專屬日誌頻道
@@ -147,7 +161,8 @@ class RykerAdminActionView(discord.ui.View):
                     f"• **處決用戶**：{self.target_user.mention} (`{self.target_user.id}`)\n"
                     f"• **狀態**：已於本伺服器封鎖，並已同步加入惡意帳號庫！"
                 ),
-                color=discord.Color.red()
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
             )
             embed_local_log.set_footer(text="TWERG HoneyBot - 伺服器防護日誌")
             await send_server_log(interaction.guild, embed_local_log)
@@ -176,10 +191,33 @@ class RykerAdminActionView(discord.ui.View):
                 print(f"👋 [幹男防護 - 按鈕踢出] 伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 被操作人: {self.target_user} ({self.target_user.id})")
                 for item in self.children:
                     item.disabled = True
-                await interaction.response.edit_message(view=self)
+
+                new_content = "🚨 惡意用戶已自動禁言 3 天（管理員已處理）"
+                if interaction.message and interaction.message.content:
+                    if "等待管理員處理" in interaction.message.content:
+                        new_content = interaction.message.content.replace("等待管理員處理", "管理員已處理")
+                    elif "1 小時" in interaction.message.content:
+                        new_content = "🚨 惡意用戶已自動禁言 1 小時（管理員已處理）"
+                await interaction.response.edit_message(content=new_content, view=self)
+
                 await interaction.followup.send(
-                    f"👋 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **踢出伺服器**。"
+                    f"👋 已由管理員 {interaction.user.mention} 成功將用戶 {self.target_user.mention} (`{self.target_user.name}`) **踢出伺服器**。",
+                    ephemeral=True
                 )
+
+                # 抄送紀錄至目前伺服器的專屬日誌頻道
+                embed_local_log = discord.Embed(
+                    description=(
+                        f"👋 **[管理員處決] 踢出成員**\n\n"
+                        f"• **操作管理員**：{interaction.user.mention} (`{interaction.user.id}`)\n"
+                        f"• **處決用戶**：{self.target_user.mention} (`{self.target_user.id}`)\n"
+                        f"• **狀態**：已將該用戶踢出伺服器！"
+                    ),
+                    color=discord.Color.orange(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed_local_log.set_footer(text="TWERG HoneyBot - 伺服器防護日誌")
+                await send_server_log(interaction.guild, embed_local_log)
             else:
                 await interaction.response.send_message(f"⚠️ 用戶 `{self.target_user.name}` 已不在伺服器中。", ephemeral=True)
         except discord.Forbidden:
@@ -207,10 +245,33 @@ class RykerAdminActionView(discord.ui.View):
                 print(f"🔓 [幹男防護 - 按鈕解禁] 伺服器: {interaction.guild.name} ({interaction.guild.id}) | 操作人: {interaction.user} ({interaction.user.id}) | 被操作人: {self.target_user} ({self.target_user.id})")
                 for item in self.children:
                     item.disabled = True
-                await interaction.response.edit_message(view=self)
+
+                new_content = "🚨 惡意用戶已自動禁言 3 天（管理員已處理）"
+                if interaction.message and interaction.message.content:
+                    if "等待管理員處理" in interaction.message.content:
+                        new_content = interaction.message.content.replace("等待管理員處理", "管理員已處理")
+                    elif "1 小時" in interaction.message.content:
+                        new_content = "🚨 惡意用戶已自動禁言 1 小時（管理員已處理）"
+                await interaction.response.edit_message(content=new_content, view=self)
+
                 await interaction.followup.send(
-                    f"🔓 已由管理員 {interaction.user.mention} 成功解除用戶 {self.target_user.mention} (`{self.target_user.name}`) 的禁言狀態。"
+                    f"🔓 已由管理員 {interaction.user.mention} 成功解除用戶 {self.target_user.mention} (`{self.target_user.name}`) 的禁言狀態。",
+                    ephemeral=True
                 )
+
+                # 抄送紀錄至目前伺服器的專屬日誌頻道
+                embed_local_log = discord.Embed(
+                    description=(
+                        f"🔓 **[管理員處決] 解除禁言**\n\n"
+                        f"• **操作管理員**：{interaction.user.mention} (`{interaction.user.id}`)\n"
+                        f"• **處決用戶**：{self.target_user.mention} (`{self.target_user.id}`)\n"
+                        f"• **狀態**：已解除禁言處分！"
+                    ),
+                    color=discord.Color.green(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed_local_log.set_footer(text="TWERG HoneyBot - 伺服器防護日誌")
+                await send_server_log(interaction.guild, embed_local_log)
             else:
                 await interaction.response.send_message(f"⚠️ 用戶 `{self.target_user.name}` 已不在伺服器中。", ephemeral=True)
         except discord.Forbidden:
@@ -319,6 +380,8 @@ class RykerDefenseCog(commands.Cog):
         self.user_msg_history = {}     # {author_id_str: [(timestamp, norm_content, raw_content)]}
         self.user_img_history = {}     # {author_id_str: [timestamp, ...]}
         self.user_header_history = {}  # {author_id_str: [is_header_bool, ...]}
+        self.user_msg_timestamps = {}  # {author_id_str: [timestamp, ...]} 短時間高頻發言
+        self.user_last_msg = {}        # {author_id_str: (timestamp, raw_content)} 重複內容比對
         self.eew_pause_until = 0.0     # 地震速報連動暫停截止時間戳
 
         # 初始化資料庫
@@ -673,11 +736,11 @@ class RykerDefenseCog(commands.Cog):
             content_display = f"```\n{raw_content[:500]}\n```" if raw_content else "*(無內容或暱稱觸發)*"
             embed = discord.Embed(
                 description=(
-                    f"🚨 已匹配到惡意用戶 {author.mention} (`{author.name}`)\n"
+                    f"已匹配到惡意用戶 {author.mention} (`{author.name}`)\n"
                     f"已執行 **3 天禁言** 處置，等待管理員進行後續處決操作。\n\n"
                     f"**原因**：{reason_summary}。\n"
                     f"**原訊息內容**：\n{content_display}\n"
-                    f"請管理員檢查用戶紀錄並進行處決封鎖。"
+                    f"請管理員檢查用戶紀錄，以免誤 BAN。"
                 ),
                 color=discord.Color.red()
             )
@@ -732,7 +795,7 @@ class RykerDefenseCog(commands.Cog):
             embed.set_thumbnail(url=author.display_avatar.url)
             embed.set_footer(text="TWERG HoneyBot 防護系統")
             await channel.send(
-                content="🚨 新用戶重複洗板已自動禁言 1 小時",
+                content="🚨 惡意用戶已自動禁言 1 小時（等待管理員處理）",
                 embed=embed,
                 view=RykerAdminActionView(author)
             )
@@ -757,7 +820,7 @@ class RykerDefenseCog(commands.Cog):
                         console_channel = self.bot.get_channel(int(console_id))
                         if console_channel and console_channel.id != channel.id:
                             await console_channel.send(
-                                content="🚨 新用戶重複洗板已自動禁言 1 小時",
+                                content="🚨 惡意用戶已自動禁言 1 小時（等待管理員處理）",
                                 embed=embed,
                                 view=RykerAdminActionView(author)
                             )
@@ -773,6 +836,15 @@ class RykerDefenseCog(commands.Cog):
             self.user_msg_history[uid] = [item for item in self.user_msg_history[uid] if item[0] >= cutoff_msg]
             if not self.user_msg_history[uid]:
                 del self.user_msg_history[uid]
+
+        for uid in list(self.user_msg_timestamps.keys()):
+            self.user_msg_timestamps[uid] = [t for t in self.user_msg_timestamps[uid] if t >= cutoff_msg]
+            if not self.user_msg_timestamps[uid]:
+                del self.user_msg_timestamps[uid]
+
+        for uid in list(self.user_last_msg.keys()):
+            if now_ts - self.user_last_msg[uid][0] > 300:
+                del self.user_last_msg[uid]
 
         ninety_days_sec = 7776000
         limit_ts = now_ts - ninety_days_sec
@@ -1134,16 +1206,40 @@ class RykerDefenseCog(commands.Cog):
                 return
 
         # ----------------------------------------------------
-        # 正常監控邏輯：檢查發言次數與嚴格防護模式 (全體成員監控)
+        # 畢業豁免檢查：已在該伺服器歸檔畢業的老用戶，永遠豁免監控（直接放行，嚴格防護模式亦不干擾）
         # ----------------------------------------------------
-        # 若未開啟嚴格防護模式，且該用戶在該伺服器已歸檔畢業 (>= threshold)，放行
-        if not lurker_mon and self.is_user_archived(message.guild.id, author_id):
+        if self.is_user_archived(message.guild.id, author_id):
             return
 
-        # 讀取/更新發言次數
-        current_count = self.increment_user_count(message.guild.id, author_id, threshold)
+        # 此處開始全為受監控對象（未達門檻之新用戶、以及創建很久但發言未滿門檻之潛水帳號）
+        is_new_user = True
 
-        # 若發言次數已達門檻且未開啟嚴格防護模式，放行
+        # ----------------------------------------------------
+        # 模組：短時間 (5秒內超過3則) 高頻發言洗板保護 (defense_text_spam.py，僅限未畢業用戶)
+        # ----------------------------------------------------
+        if not is_eew_paused_now:
+            if await check_rapid_flood(self, message, now_ts, is_new_user):
+                return
+
+        # ----------------------------------------------------
+        # 模組：未畢業用戶在 30 秒內連續發送相同內容重複洗板保護 (defense_text_spam.py)
+        # ----------------------------------------------------
+        if not is_eew_paused_now:
+            if await check_duplicate_spam(self, message, now_ts, is_new_user):
+                return
+
+        # ----------------------------------------------------
+        # 正常監控邏輯：檢查發言次數與嚴格防護模式 (潛水與新用戶加強防護)
+        # ----------------------------------------------------
+        # 排除純符號、純表情符號的訊息不予計入畢業計數
+        if is_pure_symbols_or_emojis(message.content or ""):
+            current_count = self.get_user_count(message.guild.id, author_id)
+        else:
+            # 讀取/更新發言次數
+            current_count = self.increment_user_count(message.guild.id, author_id, threshold)
+
+        # 若未開啟嚴格防護模式，且發言次數已達門檻畢業，放行
+        # 若開啟嚴格防護模式 (lurker_mon=True)，尚未畢業的新用戶與潛水用戶即使在本次發言達到門檻，在嚴格模式期間依然持續受檢
         if current_count > threshold and not lurker_mon:
             return
 

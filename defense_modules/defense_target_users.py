@@ -59,7 +59,7 @@ async def check_target_users(cog, message: discord.Message) -> bool:
         bot_member = message.guild.get_member(cog.bot.user.id) or await message.guild.fetch_member(cog.bot.user.id)
         if bot_member.guild_permissions.moderate_members and bot_member.top_role > message.author.top_role:
             try:
-                reason = "新用戶前10筆訊息惡意標記保護對象/受害者（禁言3天等待管理員處置）"
+                reason = "新用戶惡意標記保護對象/受害者（禁言3天等待管理員處置）"
                 await message.author.timeout(datetime.timedelta(days=3), reason=reason)
                 await cog._send_kill_announcement(message.channel, message.author, "新用戶於前10筆訊息內惡意標記保護對象/受害者", raw_content=message.content)
                 print(f"🚨 [受害者標記模組] 已禁言 3 天惡意用戶 {message.author} ({message.author.id}) - 理由: 標記受害者/保護對象")

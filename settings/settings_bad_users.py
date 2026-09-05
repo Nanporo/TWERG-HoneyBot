@@ -181,7 +181,7 @@ class BadUsersSettingsView(discord.ui.View):
         embed.add_field(name="🖼️ 短時間圖片/附件洗板防護", value=status_icon(is_img_spam), inline=True)
         embed.add_field(name="📝 Markdown 大字體洗板防護", value=status_icon(is_header_spam), inline=True)
         embed.add_field(name="⚡ EEW 地震速報連動暫停", value=status_icon(is_eew_pause), inline=True)
-        embed.add_field(name="🔍 嚴格防護模式 (全員監控)", value=status_icon(is_lurker), inline=True)
+        embed.add_field(name="🔍 嚴格防護模式 (潛水與新用戶加強防護)", value=status_icon(is_lurker), inline=True)
         embed.add_field(name="🤝 共同 BAN 人 (跨伺服器聯防)", value=status_icon(is_sync), inline=True)
 
         embed.set_footer(text="點擊下方按鈕即可動態開啟或關閉個別防禦模組。")
